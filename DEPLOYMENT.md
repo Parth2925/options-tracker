@@ -86,10 +86,14 @@ To create a Personal Access Token:
 3. Configure the service:
    - **Name**: `options-tracker-api`
    - **Environment**: `Python 3`
-   - **Python Version**: Render will automatically detect `runtime.txt` in the root directory which specifies Python 3.11.9 (required for pandas compatibility with Python 3.13)
+   - **Python Version**: **IMPORTANT** - You have two options:
+     - **Option A (Recommended)**: Manually set to **Python 3.11.9** in Render settings (Settings → Build & Deploy → Python Version)
+     - **Option B**: Use Python 3.13 with pandas 2.2.3 (already updated in requirements.txt)
    - **Build Command**: `pip install -r backend/requirements.txt`
    - **Start Command**: `cd backend && gunicorn app:app --bind 0.0.0.0:$PORT`
    - **Root Directory**: Leave empty (or set to root if needed)
+   
+   **Note**: If `runtime.txt` isn't being detected automatically, manually set the Python version in Render dashboard → Settings → Build & Deploy → Python Version dropdown.
 
 4. Add Environment Variables:
    - `DATABASE_URL`: Paste the Internal Database URL from PostgreSQL
@@ -196,11 +200,14 @@ Both Render and Vercel automatically deploy when you push to GitHub:
 - **Database connection errors**: Check that `DATABASE_URL` is set correctly in Render environment variables
 - **Import errors**: Make sure all dependencies are in `requirements.txt`
 - **Port errors**: Render automatically sets `$PORT`, make sure your start command uses it
-- **Pandas build errors**: If you see pandas compilation errors with Python 3.13, the `runtime.txt` file in the root directory specifies Python 3.11.9. After committing and pushing `runtime.txt`, Render should automatically use Python 3.11.9. If it doesn't:
-  1. Go to Render dashboard → Your service → Settings
-  2. Under "Build & Deploy", check "Python Version" 
-  3. Manually set it to Python 3.11.9 if needed
-  4. Or delete and recreate the service (it will pick up runtime.txt automatically)
+- **Pandas build errors**: If you see pandas compilation errors:
+  - **Solution 1**: Manually set Python version in Render:
+    1. Go to Render dashboard → Your service → Settings
+    2. Under "Build & Deploy", find "Python Version" dropdown
+    3. Select **Python 3.11.9** (or 3.12.x)
+    4. Save and redeploy
+  - **Solution 2**: Use pandas 2.2.3+ which supports Python 3.13 (already updated in requirements.txt)
+  - **Solution 3**: If `runtime.txt` isn't detected, ensure it's in the root directory and commit/push it, then manually set Python version in Render settings
 
 ### Frontend Issues
 
