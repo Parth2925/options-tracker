@@ -1,0 +1,678 @@
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import Navbar from '../Layout/Navbar';
+import { useTheme } from '../../contexts/ThemeContext';
+import api from '../../utils/api';
+import './Dashboard.css';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend
+} from 'chart.js';
+import { Pie } from 'react-chartjs-2';
+
+ChartJS.register(ArcElement, Tooltip, Legend);
+
+function Dashboard() {
+  const { isDarkMode } = useTheme();
+  const [summary, setSummary] = useState(null);
+  const [monthlyReturns, setMonthlyReturns] = useState(null);
+  const [openPositions, setOpenPositions] = useState(null);
+  const [marketIndices, setMarketIndices] = useState({});
+  const [positionQuotes, setPositionQuotes] = useState({});
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [accounts, setAccounts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState('all');
+  const [monthsBack, setMonthsBack] = useState(12);
+
+  useEffect(() => {
+    loadAccounts();
+    // Load market data even if no accounts (useful for everyone)
+    loadMarketData();
+  }, []);
+
+  useEffect(() => {
+    if (accounts.length > 0) {
+      loadSummary();
+      loadMonthlyReturns();
+      loadOpenPositions();
+    }
+    // If no accounts, summary is already set in loadAccounts
+  }, [selectedAccount, period, accounts, monthsBack]);
+
+  // Auto-refresh market data every 5 minutes
+  useEffect(() => {
+    loadMarketData();
+    const interval = setInterval(() => {
+      loadMarketData();
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadAccounts = async () => {
+    try {
+      const response = await api.get('/accounts');
+      const accountsData = response.data || [];
+      setAccounts(accountsData);
+      if (accountsData.length > 0 && !selectedAccount) {
+        setSelectedAccount('all');
+      } else if (accountsData.length === 0) {
+        // No accounts - set loading to false and create empty summary
+        setLoading(false);
+        setSummary({
+          total_accounts: 0,
+          total_trades: 0,
+          open_positions: 0,
+          closed_positions: 0,
+          pnl: {
+            week: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 },
+            month: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 },
+            year: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 },
+            all: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 }
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error loading accounts:', error);
+      setLoading(false);
+    }
+  };
+
+  const loadSummary = async () => {
+    setLoading(true);
+    try {
+      const params = { period };
+      if (selectedAccount && selectedAccount !== 'all') {
+        params.account_id = selectedAccount;
+      }
+      
+      const response = await api.get('/dashboard/summary', { params });
+      setSummary(response.data);
+    } catch (error) {
+      console.error('Error loading summary:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMonthlyReturns = async () => {
+    try {
+      const params = { months: monthsBack };
+      if (selectedAccount && selectedAccount !== 'all') {
+        params.account_id = selectedAccount;
+      }
+      
+      const response = await api.get('/dashboard/monthly-returns', { params });
+      setMonthlyReturns(response.data);
+    } catch (error) {
+      console.error('Error loading monthly returns:', error);
+    }
+  };
+
+  const loadOpenPositions = async () => {
+    try {
+      const params = {};
+      if (selectedAccount && selectedAccount !== 'all') {
+        params.account_id = selectedAccount;
+      }
+      
+      const response = await api.get('/dashboard/open-positions-allocation', { params });
+      setOpenPositions(response.data);
+      
+      // Load market data for positions after positions are loaded
+      if (response.data && response.data.positions && response.data.positions.length > 0) {
+        loadPositionMarketData();
+      }
+    } catch (error) {
+      console.error('Error loading open positions:', error);
+    }
+  };
+
+  const loadMarketData = async () => {
+    try {
+      const params = { include_indices: 'true' };
+      const response = await api.get('/dashboard/market-data', { params });
+      if (response.data && response.data.indices) {
+        setMarketIndices(response.data.indices);
+      }
+    } catch (error) {
+      console.error('Error loading market indices:', error);
+    }
+  };
+
+  const loadPositionMarketData = async () => {
+    try {
+      const params = {};
+      if (selectedAccount && selectedAccount !== 'all') {
+        params.account_id = selectedAccount;
+      }
+      
+      const response = await api.get('/dashboard/market-data/positions', { params });
+      if (response.data && response.data.quotes) {
+        setPositionQuotes(response.data.quotes);
+      }
+    } catch (error) {
+      console.error('Error loading position market data:', error);
+    }
+  };
+
+  // Only show loading if we're actually loading data
+  if (loading && accounts.length === 0) {
+    return (
+      <>
+        <Navbar />
+        <div className="loading">Loading dashboard...</div>
+      </>
+    );
+  }
+
+  const pnl = summary?.pnl?.[period] || {};
+  const isPositive = pnl.total_pnl >= 0;
+
+  return (
+    <>
+      <Navbar />
+      <div className="container">
+        <h1>Dashboard</h1>
+        
+        {/* Market Indices (CNBC Style) */}
+        {Object.keys(marketIndices).length > 0 && (
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+            gap: '15px', 
+            marginBottom: '30px' 
+          }}>
+            {['DIA', 'SPY', 'QQQ', 'VIX'].map((index) => {
+              const data = marketIndices[index];
+              if (!data) return null;
+              
+              const isPositive = data.change >= 0;
+              const indexNames = {
+                'SPY': 'S&P 500',
+                'DIA': 'DJIA',
+                'QQQ': 'NASDAQ',
+                'VIX': 'VIX'
+              };
+              
+              // Color entire box background based on price change
+              const backgroundColor = isPositive ? '#d4edda' : '#f8d7da';
+              const textColor = isPositive ? '#155724' : '#721c24';
+              const borderColor = isPositive ? '#28a745' : '#dc3545';
+              
+              return (
+                <div 
+                  key={index}
+                  style={{
+                    padding: '15px',
+                    backgroundColor: backgroundColor,
+                    border: `2px solid ${borderColor}`,
+                    borderRadius: '6px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  <div style={{ 
+                    fontSize: '14px', 
+                    fontWeight: 'bold', 
+                    color: textColor,
+                    marginBottom: '8px'
+                  }}>
+                    {indexNames[index] || index}
+                  </div>
+                  <div style={{ 
+                    fontSize: '26px', 
+                    fontWeight: 'bold',
+                    color: textColor,
+                    marginBottom: '8px'
+                  }}>
+                    ${data.current_price.toFixed(2)}
+                  </div>
+                  <div style={{ 
+                    fontSize: '14px',
+                    color: textColor,
+                    fontWeight: '600'
+                  }}>
+                    {isPositive ? '+' : ''}{data.change.toFixed(2)} ({isPositive ? '+' : ''}{data.change_percent.toFixed(2)}%)
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        
+        {/* Empty State for New Users */}
+        {accounts.length === 0 && !loading && (
+          <div className="card" style={{ 
+            textAlign: 'center', 
+            padding: '40px 20px',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '2px dashed var(--border-color)',
+            borderRadius: '8px',
+            marginBottom: '30px'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '20px' }}>📊</div>
+            <h2 style={{ marginBottom: '15px', color: 'var(--text-primary)' }}>Welcome to Options Tracker!</h2>
+            <p style={{ 
+              fontSize: '16px', 
+              color: 'var(--text-secondary)', 
+              marginBottom: '30px',
+              maxWidth: '600px',
+              margin: '0 auto 30px'
+            }}>
+              Get started by creating your first trading account and adding your options trades. 
+              Track your performance, monitor your positions, and analyze your returns.
+            </p>
+            <div style={{ 
+              display: 'flex', 
+              gap: '15px', 
+              justifyContent: 'center',
+              flexWrap: 'wrap'
+            }}>
+              <Link to="/accounts" className="btn btn-primary" style={{ padding: '12px 24px', fontSize: '16px', textDecoration: 'none' }}>
+                Create Your First Account
+              </Link>
+              <Link to="/trades" className="btn btn-secondary" style={{ padding: '12px 24px', fontSize: '16px', textDecoration: 'none' }}>
+                View Trades
+              </Link>
+            </div>
+            <div style={{ 
+              marginTop: '30px', 
+              padding: '20px',
+              backgroundColor: 'var(--bg-tertiary)',
+              borderRadius: '6px',
+              textAlign: 'left',
+              maxWidth: '500px',
+              margin: '30px auto 0'
+            }}>
+              <h3 style={{ fontSize: '18px', marginBottom: '15px', color: 'var(--text-primary)' }}>Quick Start Guide:</h3>
+              <ol style={{ 
+                color: 'var(--text-secondary)', 
+                lineHeight: '1.8',
+                paddingLeft: '20px',
+                margin: 0
+              }}>
+                <li>Create a trading account (e.g., "IRA", "Taxable", "Margin")</li>
+                <li>Add your initial account balance</li>
+                <li>Start adding your options trades (CSP, Covered Calls, LEAPS, etc.)</li>
+                <li>View your performance on the Dashboard</li>
+              </ol>
+            </div>
+          </div>
+        )}
+        
+        {/* Dashboard Controls - Only show if user has accounts */}
+        {accounts.length > 0 && (
+          <div className="dashboard-controls">
+            <div className="form-group" style={{ marginRight: '20px', width: '200px' }}>
+              <label>Account</label>
+              <select
+                value={selectedAccount || 'all'}
+                onChange={(e) => setSelectedAccount(e.target.value)}
+              >
+                <option value="all">All Accounts</option>
+                {accounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="form-group" style={{ width: '200px' }}>
+              <label>Time Period</label>
+              <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="year">This Year</option>
+                <option value="all">All Time</option>
+              </select>
+            </div>
+            
+            <div className="form-group" style={{ width: '200px', marginLeft: '20px' }}>
+              <label>Monthly Returns (Months)</label>
+              <select value={monthsBack} onChange={(e) => setMonthsBack(parseInt(e.target.value))}>
+                <option value="6">Last 6 Months</option>
+                <option value="12">Last 12 Months</option>
+                <option value="24">Last 24 Months</option>
+                <option value="36">Last 36 Months</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Metrics - Only show if user has accounts */}
+        {accounts.length > 0 && summary && (
+          <div className="metrics-grid">
+            <div className={`metric-card ${isPositive ? 'positive' : 'negative'}`}>
+              <h3>Total P&L</h3>
+              <div className="value">
+                ${pnl.total_pnl?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+              </div>
+            </div>
+            
+            <div className="metric-card">
+              <h3>Realized P&L</h3>
+              <div className="value">
+                ${pnl.realized_pnl?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+              </div>
+            </div>
+            
+            <div className="metric-card">
+              <h3>Unrealized P&L</h3>
+              <div className="value">
+                ${pnl.unrealized_pnl?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+              </div>
+            </div>
+            
+            <div className="metric-card">
+              <h3>Rate of Return</h3>
+              <div className="value">
+                {pnl.rate_of_return?.toFixed(2) || '0.00'}%
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Open Positions Snapshot */}
+        {openPositions && openPositions.positions && openPositions.positions.length > 0 && (
+          <div className="card">
+            <h2>Open Positions Allocation</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginTop: '20px' }}>
+              {/* Pie Chart */}
+              <div>
+                <h3 style={{ marginBottom: '20px', fontSize: '18px' }}>Portfolio Allocation by Symbol</h3>
+                {(() => {
+                  const chartData = {
+                    labels: openPositions.positions.map(p => p.symbol),
+                    datasets: [{
+                      label: 'Capital at Risk',
+                      data: openPositions.positions.map(p => p.capital_at_risk),
+                      backgroundColor: [
+                        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+                        '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
+                      ],
+                      borderColor: '#fff',
+                      borderWidth: 2
+                    }]
+                  };
+                  
+                  const options = {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                      legend: {
+                        position: 'right',
+                        labels: {
+                          padding: 15,
+                          font: {
+                            size: 12
+                          },
+                          color: isDarkMode ? '#e0e0e0' : '#333'
+                        }
+                      },
+                      tooltip: {
+                        callbacks: {
+                          label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((value / total) * 100).toFixed(2);
+                            return `${label}: $${value.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${percentage}%)`;
+                          }
+                        }
+                      }
+                    }
+                  };
+                  
+                  return <Pie data={chartData} options={options} />;
+                })()}
+              </div>
+              
+              {/* Positions Table */}
+              <div>
+                <h3 style={{ marginBottom: '20px', fontSize: '18px' }}>Position Details</h3>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                    <thead>
+                      <tr style={{ 
+                        backgroundColor: isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa', 
+                        borderBottom: `2px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}` 
+                      }}>
+                        <th style={{ padding: '10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Symbol</th>
+                        <th style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Spot Price</th>
+                        <th style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Capital at Risk</th>
+                        <th style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Allocation %</th>
+                        <th style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Contracts</th>
+                        <th style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Positions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {openPositions.positions.map((position, index) => {
+                        const quote = positionQuotes[position.symbol];
+                        const isPositive = quote ? quote.change >= 0 : null;
+                        
+                        return (
+                          <tr 
+                            key={position.symbol}
+                            style={{ 
+                              borderBottom: `1px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}`,
+                              backgroundColor: index % 2 === 0 
+                                ? (isDarkMode ? 'var(--bg-secondary)' : '#fff')
+                                : (isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa')
+                            }}
+                          >
+                            <td style={{ padding: '10px', fontWeight: '500', color: 'var(--text-primary)' }}>{position.symbol}</td>
+                            <td style={{ padding: '10px', textAlign: 'right' }}>
+                              {quote ? (
+                                <div>
+                                  <div style={{ 
+                                    fontWeight: 'bold',
+                                    color: isPositive ? '#28a745' : '#dc3545',
+                                    fontSize: '15px'
+                                  }}>
+                                    ${quote.current_price.toFixed(2)}
+                                  </div>
+                                  <div style={{ 
+                                    fontSize: '12px',
+                                    color: isPositive ? '#28a745' : '#dc3545'
+                                  }}>
+                                    {isPositive ? '+' : ''}{quote.change.toFixed(2)} ({isPositive ? '+' : ''}{quote.change_percent.toFixed(2)}%)
+                                  </div>
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Loading...</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                              ${position.capital_at_risk.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                              {position.allocation_percentage.toFixed(2)}%
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-primary)' }}>{position.contract_quantity}</td>
+                            <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-primary)' }}>{position.position_count}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ 
+                        backgroundColor: isDarkMode ? 'var(--bg-tertiary)' : '#e9ecef', 
+                        fontWeight: 'bold', 
+                        borderTop: `2px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}` 
+                      }}>
+                        <td style={{ padding: '10px', color: 'var(--text-primary)' }}>Total</td>
+                        <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-primary)' }}>-</td>
+                        <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                          ${openPositions.total_capital_at_risk.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                          {((openPositions.total_capital_at_risk / openPositions.total_capital) * 100).toFixed(2)}%
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                          {openPositions.positions.reduce((sum, p) => sum + p.contract_quantity, 0)}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                          {openPositions.positions.reduce((sum, p) => sum + p.position_count, 0)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                {openPositions.unallocated_capital > 0 && (
+                  <div style={{ 
+                    marginTop: '15px', 
+                    padding: '10px', 
+                    backgroundColor: isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa', 
+                    borderRadius: '4px', 
+                    fontSize: '14px',
+                    color: 'var(--text-primary)',
+                    border: isDarkMode ? `1px solid var(--border-color)` : 'none'
+                  }}>
+                    <strong>Unallocated Capital:</strong> ${openPositions.unallocated_capital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span style={{ color: 'var(--text-secondary)', marginLeft: '10px' }}>
+                      ({((openPositions.unallocated_capital / openPositions.total_capital) * 100).toFixed(2)}% of portfolio)
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {openPositions && (!openPositions.positions || openPositions.positions.length === 0) && (
+          <div className="card">
+            <h2>Open Positions Allocation</h2>
+            <p style={{ color: '#666', marginTop: '20px' }}>
+              No open positions found. Open positions are calculated based on opening trades that haven't been fully closed.
+            </p>
+          </div>
+        )}
+
+        {/* Summary Stats - Only show if user has accounts */}
+        {accounts.length > 0 && summary && (
+          <div className="card">
+            <h2>Summary</h2>
+            <div className="summary-grid">
+              <div className="summary-item">
+                <span className="summary-label">Total Accounts:</span>
+                <span className="summary-value">{summary?.total_accounts || 0}</span>
+              </div>
+              <div className="summary-item">
+                <span className="summary-label">Total Trades:</span>
+                <span className="summary-value">{summary?.total_trades || 0}</span>
+              </div>
+              <div className="summary-item">
+                <span className="summary-label">Open Positions:</span>
+                <span className="summary-value">{summary?.open_positions || 0}</span>
+              </div>
+              <div className="summary-item">
+                <span className="summary-label">Closed Positions:</span>
+                <span className="summary-value">{summary?.closed_positions || 0}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Year-to-Date Return - Only show if user has accounts */}
+        {accounts.length > 0 && monthlyReturns && (
+          <div className="card">
+            <h2>Year-to-Date (YTD) Return - {monthlyReturns.ytd?.year}</h2>
+            <div className="metrics-grid" style={{ marginTop: '20px' }}>
+              <div className={`metric-card ${monthlyReturns.ytd?.total_return >= 0 ? 'positive' : 'negative'}`}>
+                <h3>YTD Total Return</h3>
+                <div className="value">
+                  ${monthlyReturns.ytd?.total_return?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                </div>
+              </div>
+              <div className={`metric-card ${monthlyReturns.ytd?.return_percentage >= 0 ? 'positive' : 'negative'}`}>
+                <h3>YTD Return %</h3>
+                <div className="value">
+                  {monthlyReturns.ytd?.return_percentage?.toFixed(2) || '0.00'}%
+                </div>
+              </div>
+              <div className="metric-card">
+                <h3>YTD Trades</h3>
+                <div className="value">
+                  {monthlyReturns.ytd?.trade_count || 0}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Monthly Returns Table - Only show if user has accounts */}
+        {accounts.length > 0 && monthlyReturns && monthlyReturns.monthly_returns && monthlyReturns.monthly_returns.length > 0 && (
+          <div className="card">
+            <h2>Monthly Returns</h2>
+            <div style={{ overflowX: 'auto', marginTop: '20px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold' }}>Month</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold' }}>Total Return</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold' }}>Return %</th>
+                    <th style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>Trades</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyReturns.monthly_returns.map((month, index) => (
+                    <tr 
+                      key={`${month.year}-${month.month}`}
+                      style={{ 
+                        borderBottom: '1px solid #dee2e6',
+                        backgroundColor: index % 2 === 0 ? '#fff' : '#f8f9fa'
+                      }}
+                    >
+                      <td style={{ padding: '12px', fontWeight: '500' }}>
+                        {month.year_month}
+                      </td>
+                      <td 
+                        style={{ 
+                          padding: '12px', 
+                          textAlign: 'right',
+                          color: month.total_return >= 0 ? '#28a745' : '#dc3545',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        ${month.total_return.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td 
+                        style={{ 
+                          padding: '12px', 
+                          textAlign: 'right',
+                          color: month.return_percentage >= 0 ? '#28a745' : '#dc3545',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        {month.return_percentage.toFixed(2)}%
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                        {month.trade_count}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {accounts.length > 0 && monthlyReturns && (!monthlyReturns.monthly_returns || monthlyReturns.monthly_returns.length === 0) && (
+          <div className="card">
+            <h2>Monthly Returns</h2>
+            <p style={{ color: 'var(--text-secondary)', marginTop: '20px' }}>
+              No monthly returns data available for the selected period. Returns are calculated based on when trades were closed.
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+export default Dashboard;
+

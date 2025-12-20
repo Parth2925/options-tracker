@@ -1,0 +1,31 @@
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-open {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status-closed {
+  background-color: #d1ecf1;
+  color: #0c5460;
+}
+
+.status-assigned {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.sortable-header {
+  position: relative;
+  transition: background-color 0.2s;
+}
+
+.sortable-header:hover {
+  background-color: var(--hover-bg);
+}
+

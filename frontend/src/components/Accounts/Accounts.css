@@ -1,0 +1,39 @@
+.accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.account-item {
+  padding: 15px;
+  border: 2px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bg-secondary);
+}
+
+.account-item:hover {
+  border-color: #007bff;
+  background-color: var(--hover-bg);
+}
+
+.account-item.selected {
+  border-color: #007bff;
+  background-color: var(--hover-bg);
+}
+
+.account-item h3 {
+  margin-bottom: 5px;
+  color: var(--text-primary);
+}
+
+.account-item p {
+  margin: 5px 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+

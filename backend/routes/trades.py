@@ -1,0 +1,826 @@
+from flask import Blueprint, request, jsonify, send_file
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from models import db, Trade, Account
+from datetime import datetime
+import pandas as pd
+import io
+from utils.import_utils import parse_trade_file
+
+trades_bp = Blueprint('trades', __name__)
+
+def get_user_id():
+    """Helper to get user ID from JWT token, converting string to int"""
+    user_id_str = get_jwt_identity()
+    return int(user_id_str) if user_id_str else None
+
+def calculate_premium(trade_price, trade_action, contract_quantity, fees):
+    """
+    Calculate premium based on trade price, action, quantity, and fees.
+    
+    Options contract size: 1 contract = 100 shares
+    
+    Trade actions:
+    - Sold to Open: Receive premium, subtract fees
+    - Bought to Close: Pay premium, add fees (negative)
+    - Bought to Open: Pay premium, add fees (negative)
+    - Sold to Close: Receive premium, subtract fees
+    
+    Formula:
+    - Base premium = trade_price * contract_quantity * 100
+    - Total fees = fees * contract_quantity
+    
+    For "Sold" actions: premium = base_premium - total_fees (positive)
+    For "Bought" actions: premium = -(base_premium + total_fees) (negative)
+    """
+    if not trade_price or not trade_action or not contract_quantity:
+        return 0
+    
+    trade_price = float(trade_price)
+    contract_quantity = int(contract_quantity)
+    fees = float(fees) if fees else 0
+    
+    # Base premium: price per contract * quantity * 100 (options contract size)
+    base_premium = trade_price * contract_quantity * 100
+    
+    # Total fees: fee per contract * quantity
+    total_fees = fees * contract_quantity
+    
+    # Calculate premium based on trade action
+    if trade_action in ['Sold to Open', 'Sold to Close']:
+        # Receiving premium, subtract fees
+        premium = base_premium - total_fees
+    elif trade_action in ['Bought to Close', 'Bought to Open']:
+        # Paying premium, add fees (make negative)
+        premium = -(base_premium + total_fees)
+    else:
+        # Fallback: if no action specified, assume it's already calculated
+        premium = base_premium - total_fees
+    
+    return round(premium, 2)
+
+@trades_bp.route('', methods=['GET'])
+@jwt_required()
+def get_trades():
+    user_id = get_user_id()
+    account_id = request.args.get('account_id', type=int)
+    status = request.args.get('status')  # 'Open', 'Closed', 'All'
+    
+    # Get user's account IDs
+    accounts = Account.query.filter_by(user_id=user_id).all()
+    account_ids = [acc.id for acc in accounts]
+    
+    if not account_ids:
+        return jsonify([]), 200
+    
+    query = Trade.query.filter(Trade.account_id.in_(account_ids))
+    
+    if account_id and account_id in account_ids:
+        query = query.filter_by(account_id=account_id)
+    
+    if status and status != 'All':
+        query = query.filter_by(status=status)
+    
+    trades = query.order_by(Trade.trade_date.desc()).all()
+    # Auto-update status for all trades and include realized P&L
+    # BUT: Don't override status for trades that were explicitly set during creation/update
+    # Only auto-update if status seems incorrect (e.g., expired trades)
+    for trade in trades:
+        # Only auto-update if the trade appears to need status correction
+        # Don't override status that was explicitly set during partial close handling
+        if trade.trade_action in ['Sold to Open', 'Bought to Open']:
+            # For opening trades, check if status should be updated based on child trades
+            # BUT: If trade is explicitly "Open" and has remaining quantity, don't override
+            remaining_qty = trade.get_remaining_open_quantity()
+            if trade.status == 'Open' and remaining_qty > 0:
+                # Trade is explicitly Open with remaining quantity - don't override
+                continue
+            
+            new_status = trade.auto_determine_status()
+            if new_status != trade.status:
+                trade.status = new_status
+    db.session.commit()
+    
+    return jsonify([trade.to_dict(include_realized_pnl=True) for trade in trades]), 200
+
+@trades_bp.route('', methods=['POST'])
+@jwt_required()
+def create_trade():
+    user_id = get_user_id()
+    data = request.get_json()
+    
+    if not data or not data.get('account_id') or not data.get('symbol') or not data.get('trade_type'):
+        return jsonify({'error': 'account_id, symbol, and trade_type are required'}), 400
+    
+    # Verify account belongs to user
+    account = Account.query.filter_by(id=data['account_id'], user_id=user_id).first()
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    
+    # For Assignment trades, handle differently - no trade_price or trade_action needed
+    trade_type = data.get('trade_type')
+    is_assignment = trade_type == 'Assignment'
+    
+    trade_price = data.get('trade_price') if not is_assignment else None
+    trade_action = data.get('trade_action') if not is_assignment else None
+    contract_quantity = data.get('contract_quantity', 1)
+    fees = data.get('fees', 0)
+    
+    # Calculate premium automatically if trade_price is provided (not for Assignment)
+    if is_assignment:
+        # Assignment trades have no premium - P&L comes from parent CSP
+        premium = 0
+    elif trade_price and trade_action:
+        premium = calculate_premium(trade_price, trade_action, contract_quantity, fees)
+    else:
+        # Fallback to provided premium or 0
+        premium = data.get('premium', 0)
+    
+    # Validate closing trade quantity doesn't exceed available
+    if data.get('parent_trade_id') and trade_action in ['Bought to Close', 'Sold to Close']:
+        parent = Trade.query.get(data['parent_trade_id'])
+        if parent:
+            remaining_qty = parent.get_remaining_open_quantity()
+            if contract_quantity > remaining_qty:
+                return jsonify({
+                    'error': f'Cannot close {contract_quantity} contracts. Only {remaining_qty} contracts remaining open.'
+                }), 400
+    
+    trade_date = datetime.strptime(data['trade_date'], '%Y-%m-%d').date() if data.get('trade_date') else datetime.now().date()
+    close_date = datetime.strptime(data['close_date'], '%Y-%m-%d').date() if data.get('close_date') else None
+    
+    # Determine open_date: if this is a closing trade, use parent's trade_date
+    open_date = None
+    if data.get('parent_trade_id') and trade_action in ['Bought to Close', 'Sold to Close']:
+        parent = Trade.query.get(data['parent_trade_id'])
+        if parent:
+            open_date = parent.trade_date
+            # Set close_date to this trade's date if not provided
+            if not close_date:
+                close_date = trade_date
+    
+    # Auto-determine position_type based on trade_action if not explicitly provided
+    position_type = data.get('position_type')
+    if not position_type:
+        if is_assignment:
+            position_type = 'Assignment'
+        elif trade_action in ['Bought to Close', 'Sold to Close']:
+            position_type = 'Close'
+        elif trade_action in ['Sold to Open', 'Bought to Open']:
+            position_type = 'Open'
+        else:
+            position_type = 'Open'  # Default fallback
+    
+    # Initialize variables
+    status = data.get('status', 'Open')
+    assignment_price = data.get('assignment_price')
+    symbol = data.get('symbol')
+    strike_price = data.get('strike_price')
+    
+    # For Assignment trades, ensure status is 'Assigned' and set assignment_price from parent if not provided
+    if is_assignment:
+        # Auto-set status to Assigned
+        status = 'Assigned'
+        
+        # If parent_trade_id is provided, auto-fill missing fields from parent
+        if data.get('parent_trade_id'):
+            parent = Trade.query.get(data['parent_trade_id'])
+            if parent:
+                # Auto-fill assignment_price from parent's strike_price if not provided
+                if not data.get('assignment_price') and parent.strike_price:
+                    assignment_price = float(parent.strike_price)
+                else:
+                    assignment_price = data.get('assignment_price')
+                
+                # Auto-fill symbol, strike_price, contract_quantity from parent if not provided
+                symbol = data.get('symbol') or parent.symbol
+                strike_price = data.get('strike_price') or parent.strike_price
+                contract_quantity = data.get('contract_quantity') or parent.contract_quantity
+    
+    trade = Trade(
+        account_id=data['account_id'],
+        symbol=(symbol or data.get('symbol', '')).upper(),
+        trade_type=data['trade_type'],
+        position_type=position_type,
+        strike_price=strike_price or data.get('strike_price'),
+        expiration_date=datetime.strptime(data['expiration_date'], '%Y-%m-%d').date() if data.get('expiration_date') else None,
+        contract_quantity=contract_quantity,
+        trade_price=trade_price,
+        trade_action=trade_action,
+        premium=premium,
+        fees=fees if not is_assignment else 0,  # No fees for Assignment trades
+        assignment_price=assignment_price,
+        trade_date=trade_date,
+        open_date=open_date,
+        close_date=close_date,
+        status=status,
+        parent_trade_id=data.get('parent_trade_id'),
+        notes=data.get('notes')
+    )
+    
+    try:
+        db.session.add(trade)
+        # Don't commit yet - we need to update parent status first
+        
+        # For closing trades, ALWAYS set status to 'Closed' regardless of user input
+        # This ensures closing trades are never marked as 'Open'
+        if trade.trade_action in ['Bought to Close', 'Sold to Close']:
+            trade.status = 'Closed'
+            # Also ensure close_date is set if not provided
+            if not trade.close_date:
+                trade.close_date = trade.trade_date
+        # Auto-determine status for other trades if not explicitly set
+        elif not data.get('status'):
+            trade.status = trade.auto_determine_status()
+        
+        # If this is a closing trade, update parent status and dates BEFORE commit
+        # This ensures parent status is correct when we commit
+        if trade.parent_trade_id:
+            parent = Trade.query.get(trade.parent_trade_id)
+            if parent:
+                if trade.trade_action in ['Bought to Close', 'Sold to Close']:
+                    # Check if this is a partial close or full close
+                    # Count total closed quantity for this parent
+                    # IMPORTANT: Query database directly to avoid counting the current trade that's in memory
+                    # The current trade is added to session but not yet committed, so it won't be in the database yet
+                    # Query directly from database to get only committed closing trades
+                    from sqlalchemy import and_
+                    if trade.id:
+                        # Trade exists in DB (being updated), exclude it from query
+                        existing_closing_trades = Trade.query.filter(
+                            and_(
+                                Trade.parent_trade_id == parent.id,
+                                Trade.trade_action.in_(['Bought to Close', 'Sold to Close']),
+                                Trade.id != trade.id
+                            )
+                        ).all()
+                    else:
+                        # New trade (not in DB yet), query all closing trades for this parent
+                        existing_closing_trades = Trade.query.filter(
+                            and_(
+                                Trade.parent_trade_id == parent.id,
+                                Trade.trade_action.in_(['Bought to Close', 'Sold to Close'])
+                            )
+                        ).all()
+                    # Calculate total closed quantity
+                    # IMPORTANT: Use relationship-based calculation instead of database query
+                    # The relationship reflects the actual committed state, while database query might find stale/duplicate trades
+                    # Get remaining open quantity from relationship (doesn't include current trade yet)
+                    remaining_from_relationship = parent.get_remaining_open_quantity()
+                    # Calculate how many will be closed after adding current trade
+                    # Formula: (parent_qty - remaining_open) + current_trade_qty
+                    total_closed_qty = (parent.contract_quantity - remaining_from_relationship) + trade.contract_quantity
+                    
+                    # Only mark parent as closed if all contracts are closed
+                    if total_closed_qty >= parent.contract_quantity:
+                        parent.status = 'Closed'
+                        parent.close_date = trade.trade_date
+                    else:
+                        # Partial close - explicitly keep parent open
+                        parent.status = 'Open'
+                        parent.close_date = None  # Clear close_date if it was set
+                    # Set parent's open_date if not set (should be parent's own trade_date)
+                    if not parent.open_date:
+                        parent.open_date = parent.trade_date
+                    
+                    # IMPORTANT: Ensure closing trade's open_date is set from parent
+                    # This is critical for return calculations
+                    if not trade.open_date:
+                        trade.open_date = parent.trade_date
+                    # Also ensure close_date is set
+                    if not trade.close_date:
+                        trade.close_date = trade.trade_date
+                elif trade.trade_type == 'Assignment':
+                    # Assignment trade - mark parent CSP as Assigned
+                    if parent.trade_type == 'CSP':
+                        parent.status = 'Assigned'
+                        parent.assignment_price = trade.assignment_price or parent.strike_price
+                        # Set parent's open_date if not set
+                        if not parent.open_date:
+                            parent.open_date = parent.trade_date
+                elif trade.trade_type == 'Covered Call' and parent.trade_type == 'Assignment':
+                    # Covered call on assigned shares - no status change needed
+                    pass
+        
+        # Now commit all changes (trade and parent updates)
+        db.session.commit()
+        
+        return jsonify(trade.to_dict(include_realized_pnl=True)), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@trades_bp.route('/<int:trade_id>', methods=['GET'])
+@jwt_required()
+def get_trade(trade_id):
+    user_id = get_user_id()
+    trade = Trade.query.get(trade_id)
+    
+    if not trade:
+        return jsonify({'error': 'Trade not found'}), 404
+    
+    # Verify account belongs to user
+    account = Account.query.filter_by(id=trade.account_id, user_id=user_id).first()
+    if not account:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    return jsonify(trade.to_dict(include_realized_pnl=True)), 200
+
+@trades_bp.route('/<int:trade_id>', methods=['PUT'])
+@jwt_required()
+def update_trade(trade_id):
+    user_id = get_user_id()
+    trade = Trade.query.get(trade_id)
+    
+    if not trade:
+        return jsonify({'error': 'Trade not found'}), 404
+    
+    # Verify account belongs to user
+    account = Account.query.filter_by(id=trade.account_id, user_id=user_id).first()
+    if not account:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    
+    # Validate closing trade quantity doesn't exceed available
+    if data.get('parent_trade_id') is not None and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+        parent = Trade.query.get(data['parent_trade_id'] or trade.parent_trade_id)
+        if parent:
+            # Calculate remaining quantity excluding current trade's quantity
+            current_closing_qty = data.get('contract_quantity', trade.contract_quantity)
+            # Get all closing trades except the current one being updated
+            other_closing_trades = [child for child in parent.child_trades 
+                                   if child.id != trade.id and child.trade_action in ['Bought to Close', 'Sold to Close']]
+            total_closed_by_others = sum(child.contract_quantity for child in other_closing_trades)
+            remaining_qty = parent.contract_quantity - total_closed_by_others
+            
+            if current_closing_qty > remaining_qty:
+                return jsonify({
+                    'error': f'Cannot close {current_closing_qty} contracts. Only {remaining_qty} contracts remaining open.'
+                }), 400
+    
+    # Update fields
+    if data.get('symbol'):
+        trade.symbol = data['symbol'].upper()
+    if data.get('trade_type'):
+        trade.trade_type = data['trade_type']
+    if data.get('position_type'):
+        trade.position_type = data['position_type']
+    if data.get('strike_price') is not None:
+        trade.strike_price = data['strike_price']
+    if data.get('expiration_date'):
+        trade.expiration_date = datetime.strptime(data['expiration_date'], '%Y-%m-%d').date()
+    if data.get('contract_quantity') is not None:
+        trade.contract_quantity = data['contract_quantity']
+    if data.get('trade_price') is not None:
+        trade.trade_price = data['trade_price']
+    if data.get('trade_action'):
+        trade.trade_action = data['trade_action']
+    if data.get('fees') is not None:
+        trade.fees = data['fees']
+    if data.get('assignment_price') is not None:
+        trade.assignment_price = data['assignment_price']
+    if data.get('trade_date'):
+        trade.trade_date = datetime.strptime(data['trade_date'], '%Y-%m-%d').date()
+    if data.get('open_date'):
+        trade.open_date = datetime.strptime(data['open_date'], '%Y-%m-%d').date()
+    if data.get('close_date'):
+        trade.close_date = datetime.strptime(data['close_date'], '%Y-%m-%d').date()
+        # Ensure open_date is set for closing trades when close_date is updated
+        # This is important for return calculations - always refresh from parent
+        if trade.close_date and trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+            parent = Trade.query.get(trade.parent_trade_id)
+            if parent:
+                # Always set open_date from parent when close_date is updated
+                # This ensures return calculations use the correct dates
+                trade.open_date = parent.trade_date
+    if data.get('status'):
+        trade.status = data['status']
+    if data.get('parent_trade_id') is not None:
+        trade.parent_trade_id = data['parent_trade_id']
+        # If this is a closing trade, set open_date from parent
+        if trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+            parent = Trade.query.get(trade.parent_trade_id)
+            if parent:
+                trade.open_date = parent.trade_date
+                if not trade.close_date:
+                    trade.close_date = trade.trade_date
+    if data.get('notes') is not None:
+        trade.notes = data['notes']
+    
+    # Handle Assignment trades specially
+    is_assignment = trade.trade_type == 'Assignment'
+    
+    # Recalculate premium if trade_price or trade_action changed (not for Assignment)
+    if not is_assignment and (data.get('trade_price') is not None or data.get('trade_action') or data.get('contract_quantity') is not None or data.get('fees') is not None):
+        if trade.trade_price and trade.trade_action:
+            trade.premium = calculate_premium(trade.trade_price, trade.trade_action, trade.contract_quantity, trade.fees)
+        elif data.get('premium') is not None:
+            # Fallback to provided premium
+            trade.premium = data['premium']
+    elif is_assignment:
+        # Assignment trades have no premium
+        trade.premium = 0
+        trade.fees = 0
+    
+    # For Assignment trades, always set status to 'Assigned'
+    if is_assignment:
+        trade.status = 'Assigned'
+    # For closing trades, ALWAYS set status to 'Closed' regardless of user input
+    elif trade.trade_action in ['Bought to Close', 'Sold to Close']:
+        trade.status = 'Closed'
+        # Also ensure close_date is set if not provided
+        if not trade.close_date:
+            trade.close_date = trade.trade_date
+    # Auto-determine status for other trades if not explicitly set
+    elif not data.get('status'):
+        trade.status = trade.auto_determine_status()
+    # If status was explicitly provided for non-closing trades, use it
+    elif data.get('status'):
+        trade.status = data['status']
+    
+    # If this is a closing trade, update parent status and dates
+    if trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+        parent = Trade.query.get(trade.parent_trade_id)
+        if parent:
+            # Check if this is a partial close or full close
+            # Count total closed quantity for this parent
+            # IMPORTANT: Query database directly to avoid counting the current trade that's in memory
+            from sqlalchemy import and_
+            existing_closing_trades = Trade.query.filter(
+                and_(
+                    Trade.parent_trade_id == parent.id,
+                    Trade.trade_action.in_(['Bought to Close', 'Sold to Close']),
+                    Trade.id != trade.id  # Exclude current trade being updated
+                )
+            ).all()
+            total_closed_qty = sum(child.contract_quantity for child in existing_closing_trades)
+            total_closed_qty += trade.contract_quantity  # Include current closing trade
+            
+            # Only mark parent as closed if all contracts are closed
+            if total_closed_qty >= parent.contract_quantity:
+                parent.status = 'Closed'
+                if not parent.close_date:
+                    parent.close_date = trade.trade_date
+            else:
+                # Partial close - keep parent open
+                parent.status = 'Open'
+            if not parent.open_date:
+                parent.open_date = parent.trade_date
+    
+    trade.updated_at = datetime.utcnow()
+    
+    try:
+        db.session.commit()
+        return jsonify(trade.to_dict(include_realized_pnl=True)), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@trades_bp.route('/<int:trade_id>', methods=['DELETE'])
+@jwt_required()
+def delete_trade(trade_id):
+    user_id = get_user_id()
+    trade = Trade.query.get(trade_id)
+    
+    if not trade:
+        return jsonify({'error': 'Trade not found'}), 404
+    
+    # Verify account belongs to user
+    account = Account.query.filter_by(id=trade.account_id, user_id=user_id).first()
+    if not account:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        db.session.delete(trade)
+        db.session.commit()
+        return jsonify({'message': 'Trade deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@trades_bp.route('/<int:trade_id>/chain', methods=['GET'])
+@jwt_required()
+def get_trade_chain(trade_id):
+    """Get the full trade chain (parent, current, children)"""
+    user_id = get_user_id()
+    trade = Trade.query.get(trade_id)
+    
+    if not trade:
+        return jsonify({'error': 'Trade not found'}), 404
+    
+    # Verify account belongs to user
+    account = Account.query.filter_by(id=trade.account_id, user_id=user_id).first()
+    if not account:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    chain = trade.get_trade_chain()
+    return jsonify(chain), 200
+
+@trades_bp.route('/import', methods=['POST'])
+@jwt_required()
+def import_trades():
+    user_id = get_user_id()
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    account_id = request.form.get('account_id', type=int)
+    
+    if not account_id:
+        return jsonify({'error': 'account_id is required'}), 400
+    
+    # Verify account belongs to user
+    account = Account.query.filter_by(id=account_id, user_id=user_id).first()
+    if not account:
+        return jsonify({'error': 'Account not found'}), 404
+    
+    try:
+        trades = parse_trade_file(file, account_id)
+        
+        # Bulk insert trades
+        db.session.add_all(trades)
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Successfully imported {len(trades)} trades',
+            'count': len(trades)
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@trades_bp.route('/export-template', methods=['GET'])
+@jwt_required()
+def export_template():
+    """Export a template CSV/Excel file with example data showing required format"""
+    format_type = request.args.get('format', 'csv').lower()
+    
+    # Create comprehensive template data showing various trade scenarios
+    # Note: account_id should be set to your actual account ID when importing
+    template_data = {
+        'account_id': [1, 1, 1, 1, 1, 1, 1, 1, 1],  # Replace with your account ID
+        'symbol': [
+            'AAPL',           # 1. Open CSP
+            'AAPL',           # 2. Closed CSP (Bought to Close)
+            'GOOGL',          # 3. CSP that got Assigned
+            'GOOGL',          # 4. Assignment trade (stock position)
+            'GOOGL',          # 5. Covered Call opened after assignment
+            'GOOGL',          # 6. Covered Call closed (Bought to Close)
+            'MSFT',           # 7. LEAPS opened (Bought to Open)
+            'MSFT',           # 8. LEAPS closed (Sold to Close)
+            'TSLA'            # 9. Open CSP (another example)
+        ],
+        'trade_type': [
+            'CSP',           # Cash-Secured Put
+            'CSP',           # Cash-Secured Put (closing)
+            'CSP',           # Cash-Secured Put (assigned)
+            'Assignment',    # Assignment (stock position created)
+            'Covered Call',  # Covered Call
+            'Covered Call',  # Covered Call (closing)
+            'LEAPS',         # Long-term Equity Anticipation Securities
+            'LEAPS',         # LEAPS (closing)
+            'CSP'            # Another CSP example
+        ],
+        'position_type': [
+            'Open',          # Opening position
+            'Close',         # Closing position
+            'Open',          # Opening position (before assignment)
+            'Assignment',    # Assignment position
+            'Open',          # Opening position
+            'Close',         # Closing position
+            'Open',          # Opening position
+            'Close',         # Closing position
+            'Open'           # Opening position
+        ],
+        'strike_price': [
+            150.00,          # CSP strike
+            150.00,          # Same strike (closing)
+            160.00,          # CSP strike
+            160.00,          # Assignment price (same as strike)
+            170.00,          # Covered call strike
+            170.00,          # Same strike (closing)
+            400.00,          # LEAPS strike
+            400.00,          # Same strike (closing)
+            200.00           # Another CSP strike
+        ],
+        'expiration_date': [
+            '2025-12-26',    # CSP expiration
+            '2025-12-26',    # Same expiration (closing)
+            '2025-11-22',    # CSP expiration (assigned)
+            None,            # Assignment has no expiration
+            '2025-12-20',    # Covered call expiration
+            '2025-12-20',    # Same expiration (closing)
+            '2026-01-16',    # LEAPS expiration
+            '2026-01-16',    # Same expiration (closing)
+            '2025-12-19'     # Another CSP expiration
+        ],
+        'contract_quantity': [
+            2,               # 2 contracts
+            2,               # Closing all 2 contracts
+            1,               # 1 contract
+            1,               # 1 contract (100 shares)
+            1,               # 1 covered call contract
+            1,               # Closing 1 contract
+            5,               # 5 LEAPS contracts
+            5,               # Closing all 5 contracts
+            3                # 3 contracts
+        ],
+        'trade_price': [
+            5.00,            # $5.00 per contract (CSP)
+            2.50,            # $2.50 per contract (buying to close)
+            3.00,            # $3.00 per contract (CSP)
+            None,            # Assignment has no trade_price
+            3.50,            # $3.50 per contract (covered call)
+            1.00,            # $1.00 per contract (buying to close)
+            80.00,           # $80.00 per contract (LEAPS)
+            95.00,           # $95.00 per contract (selling to close)
+            4.50             # $4.50 per contract (CSP)
+        ],
+        'trade_action': [
+            'Sold to Open',  # Opening CSP
+            'Bought to Close', # Closing CSP
+            'Sold to Open',  # Opening CSP
+            None,            # Assignment has no trade_action
+            'Sold to Open',  # Opening covered call
+            'Bought to Close', # Closing covered call
+            'Bought to Open', # Opening LEAPS
+            'Sold to Close',  # Closing LEAPS
+            'Sold to Open'   # Opening CSP
+        ],
+        'premium': [
+            998.68,          # Calculated: (5.00 * 2 * 100) - (1.32 * 2)
+            -502.50,         # Calculated: -(2.50 * 2 * 100 + 0.50 * 2)
+            298.50,          # Calculated: (3.00 * 1 * 100) - 1.50
+            0.00,            # Assignment has no premium
+            348.50,          # Calculated: (3.50 * 1 * 100) - 1.50
+            -101.00,         # Calculated: -(1.00 * 1 * 100 + 1.00)
+            -40005.00,       # Calculated: -(80.00 * 5 * 100 + 5.00)
+            47495.00,        # Calculated: (95.00 * 5 * 100) - 5.00
+            1348.50          # Calculated: (4.50 * 3 * 100) - 1.50
+        ],
+        'fees': [
+            1.32,            # $1.32 total fees
+            0.50,            # $0.50 total fees
+            1.50,            # $1.50 total fees
+            0.00,            # Assignment has no fees
+            1.50,            # $1.50 total fees
+            1.00,            # $1.00 total fees
+            5.00,            # $5.00 total fees
+            5.00,            # $5.00 total fees
+            1.50             # $1.50 total fees
+        ],
+        'trade_date': [
+            '2025-11-20',    # CSP opened
+            '2025-12-10',    # CSP closed early
+            '2025-10-15',    # CSP opened
+            '2025-11-22',    # CSP assigned on expiration
+            '2025-11-25',    # Covered call opened after assignment
+            '2025-12-15',    # Covered call closed early
+            '2025-10-01',    # LEAPS opened
+            '2025-12-20',    # LEAPS closed
+            '2025-12-01'     # CSP opened
+        ],
+        'close_date': [
+            None,            # Still open
+            '2025-12-10',    # Closed on this date
+            None,            # Assigned (no close_date, status is Assigned)
+            None,            # Assignment creates position (no close_date)
+            None,            # Still open
+            '2025-12-15',    # Closed on this date
+            None,            # Still open
+            '2025-12-20',    # Closed on this date
+            None             # Still open
+        ],
+        'status': [
+            'Open',          # Open position
+            'Closed',        # Closed position
+            'Assigned',      # Assigned (stock position created)
+            'Assigned',      # Assignment trade status
+            'Open',          # Open position
+            'Closed',        # Closed position
+            'Open',          # Open position
+            'Closed',        # Closed position
+            'Open'           # Open position
+        ],
+        'parent_trade_id': [
+            None,            # Opening trade (no parent)
+            1,               # Closing trade (parent is row 1, but use actual ID in real import)
+            None,            # Opening trade (no parent)
+            3,               # Assignment (parent is row 3, but use actual ID in real import)
+            4,               # Covered call (parent is row 4, but use actual ID in real import)
+            5,               # Closing trade (parent is row 5, but use actual ID in real import)
+            None,            # Opening trade (no parent)
+            7,               # Closing trade (parent is row 7, but use actual ID in real import)
+            None             # Opening trade (no parent)
+        ],
+        'assignment_price': [
+            None,            # Not an assignment
+            None,            # Not an assignment
+            None,            # Not an assignment (but status is Assigned)
+            160.00,          # Price at which stock was assigned
+            None,            # Not an assignment
+            None,            # Not an assignment
+            None,            # Not an assignment
+            None,            # Not an assignment
+            None             # Not an assignment
+        ],
+        'notes': [
+            'Opened CSP on AAPL at $150 strike',
+            'Closed CSP early for profit',
+            'Opened CSP on GOOGL, later assigned',
+            'CSP assigned, received 100 shares at $160',
+            'Sold covered call on assigned shares',
+            'Bought back covered call early',
+            'Opened LEAPS call on MSFT',
+            'Sold LEAPS for profit',
+            'Another CSP example on TSLA'
+        ]
+    }
+    
+    df = pd.DataFrame(template_data)
+    
+    if format_type == 'excel' or format_type == 'xlsx':
+        # Create Excel file with instructions sheet
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Write instructions sheet
+            instructions_data = {
+                'Instructions': [
+                    'IMPORTANT: Replace account_id with your actual account ID',
+                    '',
+                    'Trade Types:',
+                    '  - CSP: Cash-Secured Put',
+                    '  - Covered Call: Call option sold on owned stock',
+                    '  - LEAPS: Long-term Equity Anticipation Securities',
+                    '  - Assignment: Stock position created from assigned CSP',
+                    '',
+                    'Position Types:',
+                    '  - Open: Opening a new position',
+                    '  - Close: Closing an existing position',
+                    '  - Assignment: Stock position from assignment',
+                    '',
+                    'Trade Actions:',
+                    '  - Sold to Open: Opening a short position (CSP, Covered Call)',
+                    '  - Bought to Open: Opening a long position (LEAPS)',
+                    '  - Bought to Close: Closing a short position',
+                    '  - Sold to Close: Closing a long position',
+                    '',
+                    'Parent Trade ID:',
+                    '  - Leave empty for opening trades',
+                    '  - For closing trades: Enter the ID of the opening trade',
+                    '  - For assignments: Enter the ID of the CSP that was assigned',
+                    '  - For covered calls: Enter the ID of the assignment trade',
+                    '',
+                    'Assignment Price:',
+                    '  - Only required for Assignment trade type',
+                    '  - Enter the price at which stock was assigned (usually the strike price)',
+                    '',
+                    'Premium Calculation:',
+                    '  - Premium is calculated automatically from trade_price, trade_action, and fees',
+                    '  - For "Sold" actions: Premium = (trade_price × quantity × 100) - fees',
+                    '  - For "Bought" actions: Premium = -((trade_price × quantity × 100) + fees)',
+                    '  - You can also enter premium directly if preferred',
+                    '',
+                    'Example Trade Lifecycle:',
+                    '  1. Open CSP: trade_type=CSP, position_type=Open, trade_action=Sold to Open',
+                    '  2. Close CSP: trade_type=CSP, position_type=Close, trade_action=Bought to Close, parent_trade_id=1',
+                    '  3. CSP Assigned: trade_type=Assignment, position_type=Assignment, assignment_price=strike_price, parent_trade_id=1',
+                    '  4. Open Covered Call: trade_type=Covered Call, position_type=Open, trade_action=Sold to Open, parent_trade_id=3',
+                    '',
+                    'Status:',
+                    '  - Open: Position is currently open',
+                    '  - Closed: Position has been closed',
+                    '  - Assigned: CSP was assigned (stock position created)',
+                    '',
+                    'Notes:',
+                    '  - All dates should be in YYYY-MM-DD format',
+                    '  - Strike prices and trade prices are per share/contract',
+                    '  - Contract quantity is the number of contracts (1 contract = 100 shares)',
+                    '  - Fees are total fees for the trade'
+                ]
+            }
+            instructions_df = pd.DataFrame(instructions_data)
+            instructions_df.to_excel(writer, index=False, sheet_name='Instructions')
+            
+            # Write template data sheet
+            df.to_excel(writer, index=False, sheet_name='Trades Template')
+        output.seek(0)
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='trades_template.xlsx'
+        )
+    else:
+        # Create CSV file
+        output = io.StringIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        return send_file(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name='trades_template.csv'
+        )
+

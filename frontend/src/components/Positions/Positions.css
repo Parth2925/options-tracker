@@ -1,0 +1,10 @@
+.sortable-header {
+  position: relative;
+  transition: background-color 0.2s;
+}
+
+.sortable-header:hover {
+  background-color: var(--hover-bg);
+}
+
+

@@ -1,0 +1,672 @@
+import React, { useState, useEffect } from 'react';
+import api from '../../utils/api';
+import './Trades.css';
+
+function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
+  const [formData, setFormData] = useState({
+    account_id: accounts.length > 0 ? accounts[0].id : '',
+    symbol: '',
+    trade_type: 'CSP',
+    position_type: 'Open',
+    strike_price: '',
+    expiration_date: '',
+    contract_quantity: 1,
+    trade_price: '',
+    trade_action: 'Sold to Open',
+    fees: '',
+    assignment_price: '',
+    trade_date: new Date().toISOString().split('T')[0],
+    close_date: '',
+    status: 'Open',
+    parent_trade_id: '',
+    notes: '',
+  });
+  const [calculatedPremium, setCalculatedPremium] = useState(0);
+  const [calculatedRealizedPnl, setCalculatedRealizedPnl] = useState(0);
+  const [parentTrade, setParentTrade] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  // Filter available parent trades based on trade type and action
+  const getAvailableParentTrades = () => {
+    if (!trades || !formData.symbol) return [];
+    
+    return trades.filter(t => {
+      // Don't show the trade being edited
+      if (t.id === trade?.id) return false;
+      
+      // Must be same symbol
+      if (t.symbol !== formData.symbol) return false;
+      
+      // If closing a position (Bought to Close or Sold to Close), show positions with remaining open quantity
+      // OR include the current parent trade even if it's closed (for editing purposes)
+      if (formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close') {
+        // Include if it's the current parent trade (for editing)
+        const isCurrentParent = trade && trade.parent_trade_id && t.id === trade.parent_trade_id;
+        if (isCurrentParent) return true;
+        
+        // Include if it matches type and has remaining open quantity
+        if (t.trade_type === formData.trade_type && t.trade_action && 
+            (t.trade_action === 'Sold to Open' || t.trade_action === 'Bought to Open')) {
+          // Check if there are remaining open contracts
+          const remainingQty = t.remaining_open_quantity !== undefined 
+            ? t.remaining_open_quantity 
+            : (t.contract_quantity || 0);
+          
+          return remainingQty > 0;
+        }
+        return false;
+      }
+      
+      // If creating Assignment, show open CSPs
+      // OR include the current parent trade even if it's closed (for editing purposes)
+      if (formData.trade_type === 'Assignment') {
+        const isCurrentParent = trade && trade.parent_trade_id && t.id === trade.parent_trade_id;
+        return (t.trade_type === 'CSP' && t.status === 'Open') || isCurrentParent;
+      }
+      
+      // If creating Covered Call, show Assignment trades (stock positions)
+      // OR include the current parent trade even if it's closed (for editing purposes)
+      if (formData.trade_type === 'Covered Call') {
+        const isCurrentParent = trade && trade.parent_trade_id && t.id === trade.parent_trade_id;
+        return (t.trade_type === 'Assignment' && t.status === 'Assigned') || isCurrentParent;
+      }
+      
+      return false;
+    });
+  };
+  
+  const availableParentTrades = getAvailableParentTrades();
+
+  // Load trade data if editing
+  useEffect(() => {
+    if (trade) {
+      setFormData({
+        account_id: trade.account_id,
+        symbol: trade.symbol,
+        trade_type: trade.trade_type,
+        position_type: trade.position_type,
+        strike_price: trade.strike_price || '',
+        expiration_date: trade.expiration_date ? trade.expiration_date.split('T')[0] : '',
+        contract_quantity: trade.contract_quantity || 1,
+        trade_price: trade.trade_price || '',
+        trade_action: trade.trade_action || 'Sold to Open',
+        fees: trade.fees || '',
+        assignment_price: trade.assignment_price || '',
+        trade_date: trade.trade_date ? trade.trade_date.split('T')[0] : new Date().toISOString().split('T')[0],
+        close_date: trade.close_date ? trade.close_date.split('T')[0] : '',
+        status: trade.status || 'Open',
+        parent_trade_id: trade.parent_trade_id || '',
+        notes: trade.notes || '',
+      });
+      if (trade.trade_price && trade.trade_action) {
+        calculatePremium(trade.trade_price, trade.trade_action, trade.contract_quantity || 1, trade.fees || 0);
+      }
+      // Load parent trade if exists
+      if (trade.parent_trade_id) {
+        const parent = trades?.find(t => t.id === trade.parent_trade_id);
+        setParentTrade(parent || null);
+        if (parent && (trade.trade_action === 'Bought to Close' || trade.trade_action === 'Sold to Close')) {
+          const closingPremium = trade.premium || 0;
+          const parentPremium = parent.premium || 0;
+          const parentQty = parent.contract_quantity || 1;
+          const closingQty = trade.contract_quantity || 1;
+          
+          // Calculate proportional opening premium for the closed contracts
+          const openingPremiumPerContract = parentPremium / parentQty;
+          const openingPremiumForClosed = openingPremiumPerContract * closingQty;
+          
+          // Unified formula: Realized P&L = Opening Premium + Closing Premium
+          setCalculatedRealizedPnl(openingPremiumForClosed + closingPremium);
+        }
+      }
+    }
+  }, [trade, trades]);
+
+  const calculatePremium = (tradePrice, tradeAction, contractQty, fees) => {
+    if (!tradePrice || !tradeAction || !contractQty) {
+      setCalculatedPremium(0);
+      return 0;
+    }
+
+    const price = parseFloat(tradePrice) || 0;
+    const qty = parseInt(contractQty) || 1;
+    const fee = parseFloat(fees) || 0;
+
+    // Base premium: price per contract * quantity * 100 (options contract size)
+    const basePremium = price * qty * 100;
+    const totalFees = fee * qty;
+
+    // Calculate based on trade action
+    let premium = 0;
+    if (tradeAction === 'Sold to Open' || tradeAction === 'Sold to Close') {
+      // Receiving premium, subtract fees
+      premium = basePremium - totalFees;
+    } else if (tradeAction === 'Bought to Close' || tradeAction === 'Bought to Open') {
+      // Paying premium, add fees (make negative)
+      premium = -(basePremium + totalFees);
+    }
+
+    setCalculatedPremium(premium);
+    return premium;
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    
+    // Auto-set position_type based on trade_action
+    let updatedData = { [name]: value };
+    if (name === 'trade_action') {
+      if (value === 'Bought to Close' || value === 'Sold to Close') {
+        updatedData.position_type = 'Close';
+      } else if (value === 'Sold to Open' || value === 'Bought to Open') {
+        updatedData.position_type = 'Open';
+      }
+    }
+    
+    setFormData((prev) => ({
+      ...prev,
+      ...updatedData,
+    }));
+
+    // Recalculate premium when relevant fields change
+    if (name === 'trade_price' || name === 'trade_action' || name === 'contract_quantity' || name === 'fees') {
+      const newData = { ...formData, ...updatedData };
+      const newPremium = calculatePremium(
+        newData.trade_price,
+        newData.trade_action,
+        newData.contract_quantity,
+        newData.fees
+      );
+      
+      // If closing a trade, recalculate realized P&L (handle partial closes)
+      if (parentTrade && (newData.trade_action === 'Bought to Close' || newData.trade_action === 'Sold to Close')) {
+        const parentPremium = parentTrade.premium || 0;
+        const parentQty = parentTrade.contract_quantity || 1;
+        const closingQty = parseInt(newData.contract_quantity) || 1;
+        
+        // Calculate proportional opening premium for the closed contracts
+        const openingPremiumPerContract = parentPremium / parentQty;
+        const openingPremiumForClosed = openingPremiumPerContract * closingQty;
+        
+        // Unified formula: Realized P&L = Opening Premium + Closing Premium
+        // This works for all scenarios because premiums are already signed correctly
+        setCalculatedRealizedPnl(openingPremiumForClosed + newPremium);
+      }
+    }
+    
+    // Update parent trade when parent_trade_id changes
+    if (name === 'parent_trade_id') {
+      const selectedParent = trades?.find(t => t.id === parseInt(value));
+      setParentTrade(selectedParent || null);
+      
+      // Auto-fill strike price and expiration from parent trade
+      if (selectedParent) {
+        const remainingQty = selectedParent.remaining_open_quantity !== undefined 
+          ? selectedParent.remaining_open_quantity 
+          : (selectedParent.contract_quantity || 0);
+        
+        setFormData((prev) => {
+          const updates = {
+            ...prev,
+            strike_price: selectedParent.strike_price || prev.strike_price,
+            expiration_date: selectedParent.expiration_date ? selectedParent.expiration_date.split('T')[0] : prev.expiration_date,
+            symbol: selectedParent.symbol || prev.symbol, // Also match symbol
+            contract_quantity: Math.min(prev.contract_quantity || 1, remainingQty), // Don't exceed remaining
+          };
+          
+          // For Assignment trades, auto-fill assignment_price from parent's strike_price
+          if (prev.trade_type === 'Assignment' && selectedParent.strike_price) {
+            updates.assignment_price = selectedParent.strike_price;
+            updates.status = 'Assigned'; // Auto-set status to Assigned
+          }
+          
+          return updates;
+        });
+      }
+      
+      // If closing a trade, calculate realized P&L (handle partial closes)
+      if (selectedParent && (formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close')) {
+        const parentPremium = selectedParent.premium || 0;
+        const parentQty = selectedParent.contract_quantity || 1;
+        const closingQty = parseInt(formData.contract_quantity) || 1;
+        
+        // Calculate proportional opening premium for the closed contracts
+        const openingPremiumPerContract = parentPremium / parentQty;
+        const openingPremiumForClosed = openingPremiumPerContract * closingQty;
+        
+        // Unified formula: Realized P&L = Opening Premium + Closing Premium
+        setCalculatedRealizedPnl(openingPremiumForClosed + calculatedPremium);
+      }
+    }
+    
+    // Auto-set status to 'Assigned' when trade_type changes to Assignment
+    if (name === 'trade_type' && value === 'Assignment') {
+      setFormData((prev) => ({
+        ...prev,
+        status: 'Assigned',
+        trade_action: '', // Clear trade_action for Assignment
+        trade_price: '', // Clear trade_price for Assignment
+        assignment_price: parentTrade?.strike_price || prev.assignment_price || '', // Auto-fill from parent if available
+      }));
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const payload = {
+        ...formData,
+        account_id: parseInt(formData.account_id),
+        strike_price: formData.strike_price ? parseFloat(formData.strike_price) : null,
+        expiration_date: formData.expiration_date || null,
+        contract_quantity: parseInt(formData.contract_quantity) || 1,
+        // For Assignment trades, don't send trade_price or trade_action
+        trade_price: formData.trade_type === 'Assignment' ? null : (formData.trade_price ? parseFloat(formData.trade_price) : null),
+        trade_action: formData.trade_type === 'Assignment' ? null : formData.trade_action,
+        fees: parseFloat(formData.fees) || 0,
+        assignment_price: formData.assignment_price ? parseFloat(formData.assignment_price) : null,
+        close_date: formData.close_date || null,
+        open_date: formData.open_date || null,
+        parent_trade_id: formData.parent_trade_id ? parseInt(formData.parent_trade_id) : null,
+        // Ensure status is 'Assigned' for Assignment trades
+        status: formData.trade_type === 'Assignment' ? 'Assigned' : formData.status,
+      };
+
+      if (trade) {
+        // Update existing trade
+        await api.put(`/trades/${trade.id}`, payload);
+      } else {
+        // Create new trade
+        await api.post('/trades', payload);
+      }
+      onSuccess();
+    } catch (err) {
+      setError(err.response?.data?.error || `Failed to ${trade ? 'update' : 'create'} trade`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h2>{trade ? 'Edit Trade' : 'Add New Trade'}</h2>
+      <form onSubmit={handleSubmit}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15px' }}>
+          <div className="form-group">
+            <label>Account *</label>
+            <select
+              name="account_id"
+              value={formData.account_id}
+              onChange={handleChange}
+              required
+            >
+              <option value="">Select Account</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Symbol *</label>
+            <input
+              type="text"
+              name="symbol"
+              value={formData.symbol}
+              onChange={handleChange}
+              required
+              placeholder="AAPL"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Trade Type *</label>
+            <select
+              name="trade_type"
+              value={formData.trade_type}
+              onChange={handleChange}
+              required
+            >
+              <option value="CSP">Cash-Secured Put (CSP)</option>
+              <option value="Covered Call">Covered Call</option>
+              <option value="LEAPS">LEAPS</option>
+              <option value="Assignment">Assignment</option>
+              <option value="Rollover">Rollover</option>
+            </select>
+          </div>
+
+          {formData.trade_type !== 'Assignment' && (
+            <div className="form-group">
+              <label>Trade Action *</label>
+              <select
+                name="trade_action"
+                value={formData.trade_action}
+                onChange={handleChange}
+                required
+              >
+                <option value="Sold to Open">Sold to Open</option>
+                <option value="Bought to Close">Bought to Close</option>
+                <option value="Bought to Open">Bought to Open</option>
+                <option value="Sold to Close">Sold to Close</option>
+              </select>
+            </div>
+          )}
+
+          {(formData.trade_action === 'Bought to Close' || 
+            formData.trade_action === 'Sold to Close' || 
+            formData.trade_type === 'Assignment' || 
+            formData.trade_type === 'Covered Call') && (
+            <div className="form-group">
+              <label>Parent Trade (Link to existing trade) *</label>
+              <select
+                name="parent_trade_id"
+                value={formData.parent_trade_id}
+                onChange={handleChange}
+                required={formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close'}
+              >
+                <option value="">Select Parent Trade</option>
+                {availableParentTrades.length === 0 ? (
+                  <option value="" disabled>
+                    No available parent trades (create the opening trade first)
+                  </option>
+                ) : (
+                  availableParentTrades.map((parentTrade) => {
+                    const remainingQty = parentTrade.remaining_open_quantity !== undefined 
+                      ? parentTrade.remaining_open_quantity 
+                      : (parentTrade.contract_quantity || 0);
+                    return (
+                      <option key={parentTrade.id} value={parentTrade.id}>
+                        {parentTrade.trade_type} - {parentTrade.symbol} @ ${parentTrade.strike_price || 'N/A'} 
+                        ({parentTrade.status}) - {remainingQty} contracts open - {new Date(parentTrade.trade_date).toLocaleDateString()}
+                      </option>
+                    );
+                  })
+                )}
+              </select>
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                {formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close' 
+                  ? 'Select the opening trade you are closing'
+                  : formData.trade_type === 'Assignment'
+                  ? 'Select the CSP that was assigned'
+                  : 'Select the assignment (stock position) to sell calls on'}
+              </small>
+            </div>
+          )}
+
+          {formData.trade_type !== 'Assignment' && (
+            <div className="form-group">
+              <label>Position Type</label>
+              <select
+                name="position_type"
+                value={formData.position_type}
+                onChange={handleChange}
+              >
+                <option value="Open">Open</option>
+                <option value="Close">Close</option>
+              </select>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label>Strike Price</label>
+            <input
+              type="number"
+              step="0.01"
+              name="strike_price"
+              value={formData.strike_price}
+              onChange={handleChange}
+              placeholder="150.00"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Expiration Date</label>
+            <input
+              type="date"
+              name="expiration_date"
+              value={formData.expiration_date}
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Contract Quantity</label>
+            <input
+              type="number"
+              name="contract_quantity"
+              value={formData.contract_quantity}
+              onChange={handleChange}
+              min="1"
+              max={parentTrade && (formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close')
+                ? (parentTrade.remaining_open_quantity !== undefined ? parentTrade.remaining_open_quantity : parentTrade.contract_quantity)
+                : undefined}
+            />
+            {parentTrade && (formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close') && (
+              <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                {parentTrade.remaining_open_quantity !== undefined 
+                  ? `${parentTrade.remaining_open_quantity} contracts remaining open`
+                  : `${parentTrade.contract_quantity} contracts total`}
+              </small>
+            )}
+          </div>
+
+          {formData.trade_type !== 'Assignment' && (
+            <div className="form-group">
+              <label>Trade Price (per contract) *</label>
+              <input
+                type="number"
+                step="0.01"
+                name="trade_price"
+                value={formData.trade_price}
+                onChange={handleChange}
+                required
+                placeholder="5.00"
+              />
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Price per contract (e.g., $5.00)
+              </small>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label>Fees (per contract)</label>
+            <input
+              type="number"
+              step="0.01"
+              name="fees"
+              value={formData.fees}
+              onChange={handleChange}
+              placeholder="0.50"
+            />
+            <small style={{ color: '#666', fontSize: '12px' }}>
+              Fee per contract (e.g., $0.50)
+            </small>
+          </div>
+
+          {formData.trade_type !== 'Assignment' && (
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label>Calculated Premium</label>
+              <div style={{
+                padding: '10px',
+                backgroundColor: calculatedPremium >= 0 ? '#d4edda' : '#f8d7da',
+                color: calculatedPremium >= 0 ? '#155724' : '#721c24',
+                borderRadius: '4px',
+                fontWeight: 'bold',
+                fontSize: '16px'
+              }}>
+                ${calculatedPremium.toFixed(2)}
+                <small style={{ display: 'block', fontSize: '12px', fontWeight: 'normal', marginTop: '5px' }}>
+                  {calculatedPremium >= 0 ? 'Premium Received' : 'Premium Paid'}
+                </small>
+              </div>
+              <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                Formula: (Trade Price × Quantity × 100) {formData.trade_action?.includes('Sold') ? '-' : '+'} (Fees × Quantity)
+              </small>
+            </div>
+          )}
+          
+          {formData.trade_type === 'Assignment' && parentTrade && (
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label>Assignment Information</label>
+              <div style={{
+                padding: '15px',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '4px',
+                border: '1px solid #dee2e6'
+              }}>
+                <div style={{ marginBottom: '10px' }}>
+                  <strong>Parent CSP Premium Received:</strong> ${(parentTrade.premium || 0).toFixed(2)}
+                  <small style={{ display: 'block', color: '#666', fontSize: '12px', marginTop: '3px' }}>
+                    This premium is the realized P&L for the CSP that was assigned. The Assignment trade itself has no P&L.
+                  </small>
+                </div>
+                <div>
+                  <strong>Assignment Price:</strong> ${formData.assignment_price || parentTrade.strike_price || 'N/A'}
+                  <small style={{ display: 'block', color: '#666', fontSize: '12px', marginTop: '3px' }}>
+                    Price at which you were assigned {formData.contract_quantity * 100} shares
+                  </small>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Show opening premium and realized P&L when closing a trade */}
+          {(formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close') && parentTrade && (
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <label>Realized P&L Calculation</label>
+              <div style={{
+                padding: '15px',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '4px',
+                border: '1px solid #dee2e6'
+              }}>
+                <div style={{ marginBottom: '10px' }}>
+                  <strong>Opening Premium:</strong> ${(parentTrade.premium || 0).toFixed(2)} ({parentTrade.contract_quantity || 1} contracts)
+                  <small style={{ display: 'block', color: '#666', fontSize: '12px', marginTop: '3px' }}>
+                    From trade on {new Date(parentTrade.trade_date).toLocaleDateString()}
+                    {formData.contract_quantity && parseInt(formData.contract_quantity) < (parentTrade.contract_quantity || 1) && (
+                      <span style={{ display: 'block', marginTop: '3px' }}>
+                        Proportional premium for {formData.contract_quantity} contracts: ${((parentTrade.premium || 0) / (parentTrade.contract_quantity || 1) * parseInt(formData.contract_quantity)).toFixed(2)}
+                      </span>
+                    )}
+                  </small>
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <strong>Closing Premium:</strong> ${calculatedPremium.toFixed(2)}
+                </div>
+                <div style={{
+                  padding: '10px',
+                  backgroundColor: calculatedRealizedPnl >= 0 ? '#d4edda' : '#f8d7da',
+                  color: calculatedRealizedPnl >= 0 ? '#155724' : '#721c24',
+                  borderRadius: '4px',
+                  fontWeight: 'bold',
+                  fontSize: '16px',
+                  marginTop: '10px'
+                }}>
+                  <strong>Realized P&L:</strong> ${calculatedRealizedPnl.toFixed(2)}
+                  <small style={{ display: 'block', fontSize: '12px', fontWeight: 'normal', marginTop: '5px' }}>
+                    Formula: Opening Premium - Closing Premium
+                  </small>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label>Assignment Price {formData.trade_type === 'Assignment' && '*'}</label>
+            <input
+              type="number"
+              step="0.01"
+              name="assignment_price"
+              value={formData.assignment_price}
+              onChange={handleChange}
+              required={formData.trade_type === 'Assignment'}
+              placeholder={formData.trade_type === 'Assignment' ? "Price at which stock was assigned (usually the strike price)" : "For assignments only"}
+            />
+            {formData.trade_type === 'Assignment' && (
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                The price at which you were assigned the stock (typically the strike price of the CSP)
+              </small>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label>Trade Date *</label>
+            <input
+              type="date"
+              name="trade_date"
+              value={formData.trade_date}
+              onChange={handleChange}
+              required
+            />
+            <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+              Date when this trade was executed/entered
+            </small>
+          </div>
+
+          <div className="form-group">
+            <label>Close Date</label>
+            <input
+              type="date"
+              name="close_date"
+              value={formData.close_date}
+              onChange={handleChange}
+            />
+            <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+              Date when position was closed (used for return calculations). For closing trades, this is typically the same as Trade Date.
+            </small>
+          </div>
+
+          <div className="form-group">
+            <label>Status</label>
+            <select
+              name="status"
+              value={formData.status}
+              onChange={handleChange}
+              disabled={formData.trade_type === 'Assignment'}
+            >
+              <option value="Open">Open</option>
+              <option value="Closed">Closed</option>
+              <option value="Assigned">Assigned</option>
+            </select>
+            {formData.trade_type === 'Assignment' && (
+              <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                Assignment trades are automatically set to 'Assigned' status
+              </small>
+            )}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>Notes</label>
+          <textarea
+            name="notes"
+            value={formData.notes}
+            onChange={handleChange}
+            rows="3"
+            placeholder="Additional notes about this trade..."
+          />
+        </div>
+
+        {error && <div className="error">{error}</div>}
+
+        <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+          <button type="submit" className="btn btn-primary" disabled={loading}>
+            {loading ? (trade ? 'Updating...' : 'Creating...') : (trade ? 'Update Trade' : 'Create Trade')}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export default TradeForm;
