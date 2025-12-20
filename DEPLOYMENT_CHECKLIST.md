@@ -68,6 +68,7 @@
 
 ### Render (Backend)
 ```
+PYTHON_VERSION=3.11.9
 DATABASE_URL=<from PostgreSQL>
 JWT_SECRET_KEY=<generate with: openssl rand -hex 32>
 FINNHUB_API_KEY=d525qj1r01qu5pvmiv2gd525qj1r01qu5pvmiv30

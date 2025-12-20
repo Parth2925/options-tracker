@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, jwt_required
 from flask_mail import Mail
 from models import db
 from routes.auth import auth_bp
@@ -70,18 +70,16 @@ app.register_blueprint(accounts_bp, url_prefix='/api/accounts')
 app.register_blueprint(trades_bp, url_prefix='/api/trades')
 app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
 
-# Tables will be created on first request or when app starts
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    return {'status': 'ok'}, 200
-
-if __name__ == '__main__':
+# Initialize database on app startup (works with gunicorn)
+def initialize_database():
+    """Initialize database tables and run migrations"""
     with app.app_context():
-        db.create_all()
-        
-        # Migration: Add trade_price and trade_action columns if they don't exist
         try:
+            # Create all tables
+            db.create_all()
+            print("✓ Database tables created/verified")
+            
+            # Run migrations for existing tables
             from sqlalchemy import inspect, text
             inspector = inspect(db.engine)
             
@@ -107,52 +105,90 @@ if __name__ == '__main__':
                         conn.execute(text("ALTER TABLE trades ADD COLUMN open_date DATE"))
                         conn.commit()
                         print("✓ Added open_date column")
-                
-                # Migration: Add user profile fields if they don't exist
-                if 'users' in inspector.get_table_names():
-                    user_columns = [col['name'] for col in inspector.get_columns('users')]
                     
-                    with db.engine.connect() as conn:
-                        if 'first_name' not in user_columns:
-                            print("Adding first_name column to users table...")
-                            conn.execute(text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100) DEFAULT ''"))
-                            conn.commit()
-                            print("✓ Added first_name column")
-                        
-                        if 'last_name' not in user_columns:
-                            print("Adding last_name column to users table...")
-                            conn.execute(text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100) DEFAULT ''"))
-                            conn.commit()
-                            print("✓ Added last_name column")
-                        
-                        if 'email_verified' not in user_columns:
-                            print("Adding email_verified column to users table...")
-                            conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0"))
-                            conn.commit()
-                            print("✓ Added email_verified column")
-                        
-                        if 'verification_token' not in user_columns:
-                            print("Adding verification_token column to users table...")
-                            conn.execute(text("ALTER TABLE users ADD COLUMN verification_token VARCHAR(100)"))
-                            conn.commit()
-                            print("✓ Added verification_token column")
-                        
-                        if 'verification_token_expires' not in user_columns:
-                            print("Adding verification_token_expires column to users table...")
-                            conn.execute(text("ALTER TABLE users ADD COLUMN verification_token_expires DATETIME"))
-                            conn.commit()
-                            print("✓ Added verification_token_expires column")
-                        
-                        if 'updated_at' not in user_columns:
-                            print("Adding updated_at column to users table...")
-                            conn.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME"))
-                            conn.commit()
-                            print("✓ Added updated_at column")
+                    if 'close_date' not in columns:
+                        print("Adding close_date column to trades table...")
+                        conn.execute(text("ALTER TABLE trades ADD COLUMN close_date DATE"))
+                        conn.commit()
+                        print("✓ Added close_date column")
+                    
+                    if 'parent_trade_id' not in columns:
+                        print("Adding parent_trade_id column to trades table...")
+                        conn.execute(text("ALTER TABLE trades ADD COLUMN parent_trade_id INTEGER"))
+                        conn.commit()
+                        print("✓ Added parent_trade_id column")
+                    
+                    if 'assignment_price' not in columns:
+                        print("Adding assignment_price column to trades table...")
+                        conn.execute(text("ALTER TABLE trades ADD COLUMN assignment_price NUMERIC(10, 2)"))
+                        conn.commit()
+                        print("✓ Added assignment_price column")
+            
+            # Check if users table exists and add new columns if needed
+            if 'users' in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns('users')]
+                
+                with db.engine.connect() as conn:
+                    if 'first_name' not in columns:
+                        print("Adding first_name column to users table...")
+                        conn.execute(text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100) NOT NULL DEFAULT ''"))
+                        conn.commit()
+                        print("✓ Added first_name column")
+                    
+                    if 'last_name' not in columns:
+                        print("Adding last_name column to users table...")
+                        conn.execute(text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100) NOT NULL DEFAULT ''"))
+                        conn.commit()
+                        print("✓ Added last_name column")
+                    
+                    if 'email_verified' not in columns:
+                        print("Adding email_verified column to users table...")
+                        conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 0"))
+                        conn.commit()
+                        print("✓ Added email_verified column")
+                    
+                    if 'verification_token' not in columns:
+                        print("Adding verification_token column to users table...")
+                        conn.execute(text("ALTER TABLE users ADD COLUMN verification_token VARCHAR(100) UNIQUE"))
+                        conn.commit()
+                        print("✓ Added verification_token column")
+                    
+                    if 'verification_token_expires' not in columns:
+                        print("Adding verification_token_expires column to users table...")
+                        conn.execute(text("ALTER TABLE users ADD COLUMN verification_token_expires DATETIME"))
+                        conn.commit()
+                        print("✓ Added verification_token_expires column")
+                    
+                    if 'updated_at' not in columns:
+                        print("Adding updated_at column to users table...")
+                        conn.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+                        conn.commit()
+                        print("✓ Added updated_at column")
+            
+            print("✓ Database initialization complete")
         except Exception as e:
-            # If table doesn't exist yet, db.create_all() will create it with all columns
-            # This error is expected for new databases
-            pass
-    
+            print(f"⚠ Database initialization error (may be expected on first run): {e}")
+
+# Initialize database when app starts
+initialize_database()
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return {'status': 'ok'}, 200
+
+@app.route('/api/init-db', methods=['POST'])
+@jwt_required()
+def init_db_endpoint():
+    """Manual database initialization endpoint (requires authentication)"""
+    try:
+        initialize_database()
+        return {'status': 'success', 'message': 'Database initialized successfully'}, 200
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}, 500
+
+if __name__ == '__main__':
+    # Database initialization is already done above (line 173)
+    # This block is only for local development
     print("=" * 50)
     print("Backend server starting...")
     print("Server will run on: http://127.0.0.1:5001")

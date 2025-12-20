@@ -86,16 +86,17 @@ To create a Personal Access Token:
 3. Configure the service:
    - **Name**: `options-tracker-api`
    - **Environment**: `Python 3`
-   - **Python Version**: **IMPORTANT** - You have two options:
-     - **Option A (Recommended)**: Manually set to **Python 3.11.9** in Render settings (Settings → Build & Deploy → Python Version)
-     - **Option B**: Use Python 3.13 with pandas 2.2.3 (already updated in requirements.txt)
+   - **Python Version**: **CRITICAL** - Add environment variable `PYTHON_VERSION` = `3.11.9` (see step 4 below)
+     
+     **Why**: `psycopg2-binary` (PostgreSQL driver) does NOT support Python 3.13. Setting `PYTHON_VERSION` environment variable ensures Render uses Python 3.11.9.
+     
+     **Note**: While `runtime.txt` in the repository root can also specify the Python version, the `PYTHON_VERSION` environment variable is more reliable and works even if the service was created before `runtime.txt` was added.
    - **Build Command**: `pip install -r backend/requirements.txt`
    - **Start Command**: `cd backend && gunicorn app:app --bind 0.0.0.0:$PORT`
    - **Root Directory**: Leave empty (or set to root if needed)
-   
-   **Note**: If `runtime.txt` isn't being detected automatically, manually set the Python version in Render dashboard → Settings → Build & Deploy → Python Version dropdown.
 
 4. Add Environment Variables:
+   - `PYTHON_VERSION`: `3.11.9` ⚠️ **CRITICAL** - This ensures Python 3.11.9 is used (required for psycopg2-binary compatibility)
    - `DATABASE_URL`: Paste the Internal Database URL from PostgreSQL
    - `JWT_SECRET_KEY`: Generate a secure random string (you can use: `openssl rand -hex 32`)
    - `FINNHUB_API_KEY`: `d525qj1r01qu5pvmiv2gd525qj1r01qu5pvmiv30`
@@ -113,15 +114,15 @@ To create a Personal Access Token:
 
 ### Initialize Database
 
-After the backend is deployed, you need to initialize the database:
+**Good news!** The database will be automatically initialized when the app starts. The Flask application includes automatic database initialization that:
 
-1. Go to your Render service dashboard
-2. Click on **"Shell"** tab
-3. Run:
-   ```bash
-   cd backend
-   python3 -c "from app import app, db; app.app_context().push(); db.create_all()"
-   ```
+1. Creates all required tables on first startup
+2. Runs migrations to add any missing columns
+3. Works automatically with gunicorn (no shell access needed)
+
+**No manual steps required!** Just deploy and the database will be ready.
+
+**Alternative (if needed)**: If you need to manually trigger initialization, you can call the `/api/init-db` endpoint (requires authentication) after logging in.
 
 ## Step 3: Deploy Frontend to Vercel
 
@@ -201,13 +202,19 @@ Both Render and Vercel automatically deploy when you push to GitHub:
 - **Import errors**: Make sure all dependencies are in `requirements.txt`
 - **Port errors**: Render automatically sets `$PORT`, make sure your start command uses it
 - **Pandas build errors**: If you see pandas compilation errors:
-  - **Solution 1**: Manually set Python version in Render:
-    1. Go to Render dashboard → Your service → Settings
-    2. Under "Build & Deploy", find "Python Version" dropdown
-    3. Select **Python 3.11.9** (or 3.12.x)
-    4. Save and redeploy
-  - **Solution 2**: Use pandas 2.2.3+ which supports Python 3.13 (already updated in requirements.txt)
-  - **Solution 3**: If `runtime.txt` isn't detected, ensure it's in the root directory and commit/push it, then manually set Python version in Render settings
+  - **Solution**: Manually set Python version in Render to Python 3.11.9 or 3.12.x (see below)
+
+- **psycopg2 ImportError with Python 3.13**: If you see `undefined symbol: _PyInterpreterState_Get` error:
+  - **Root Cause**: `psycopg2-binary` does not support Python 3.13
+  - **Solution**: Add environment variable `PYTHON_VERSION` = `3.11.9` in Render:
+    1. Go to Render dashboard → Your service → **Environment** tab
+    2. Click **"Add Environment Variable"**
+    3. Key: `PYTHON_VERSION`
+    4. Value: `3.11.9`
+    5. Click **"Save Changes"**
+    6. Render will automatically redeploy with Python 3.11.9
+    7. Verify in build logs that it says "Using Python 3.11.9" (not 3.13)
+    8. This will fix both pandas and psycopg2-binary compatibility issues
 
 ### Frontend Issues
 
