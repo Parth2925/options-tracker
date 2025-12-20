@@ -43,6 +43,23 @@ git push -u origin main
 
 Replace `YOUR_USERNAME` with your GitHub username.
 
+**Note**: If you get a "Permission denied (publickey)" error, it means your remote is using SSH. Switch to HTTPS:
+```bash
+git remote set-url origin https://github.com/YOUR_USERNAME/options-tracker.git
+```
+
+**Authentication**: When pushing via HTTPS, GitHub will prompt for:
+- **Username**: Your GitHub username
+- **Password**: Use a Personal Access Token (not your GitHub password)
+
+To create a Personal Access Token:
+1. Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Click "Generate new token (classic)"
+3. Name it (e.g., "Options Tracker Deployment")
+4. Select scope: `repo` (full control)
+5. Generate and copy the token
+6. Use this token as your password when pushing
+
 ## Step 2: Deploy Backend to Render.com
 
 ### Create Render Account
@@ -69,6 +86,7 @@ Replace `YOUR_USERNAME` with your GitHub username.
 3. Configure the service:
    - **Name**: `options-tracker-api`
    - **Environment**: `Python 3`
+   - **Python Version**: Render will automatically detect `runtime.txt` in the root directory which specifies Python 3.11.9 (required for pandas compatibility with Python 3.13)
    - **Build Command**: `pip install -r backend/requirements.txt`
    - **Start Command**: `cd backend && gunicorn app:app --bind 0.0.0.0:$PORT`
    - **Root Directory**: Leave empty (or set to root if needed)
@@ -87,7 +105,7 @@ Replace `YOUR_USERNAME` with your GitHub username.
 
 5. Click **"Create Web Service"**
 6. Wait for deployment to complete (5-10 minutes)
-7. Copy the service URL (e.g., `https://options-tracker-api.onrender.com`)
+7. Copy the service URL (e.g., `https://options-tracker-api.onrender.com`) https://options-tracker-api-4pfx.onrender.com
 
 ### Initialize Database
 
@@ -178,6 +196,11 @@ Both Render and Vercel automatically deploy when you push to GitHub:
 - **Database connection errors**: Check that `DATABASE_URL` is set correctly in Render environment variables
 - **Import errors**: Make sure all dependencies are in `requirements.txt`
 - **Port errors**: Render automatically sets `$PORT`, make sure your start command uses it
+- **Pandas build errors**: If you see pandas compilation errors with Python 3.13, the `runtime.txt` file in the root directory specifies Python 3.11.9. After committing and pushing `runtime.txt`, Render should automatically use Python 3.11.9. If it doesn't:
+  1. Go to Render dashboard → Your service → Settings
+  2. Under "Build & Deploy", check "Python Version" 
+  3. Manually set it to Python 3.11.9 if needed
+  4. Or delete and recreate the service (it will pick up runtime.txt automatically)
 
 ### Frontend Issues
 
