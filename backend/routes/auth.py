@@ -144,82 +144,34 @@ def send_verification_email(user, token):
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    print("=" * 50)
-    print("REGISTER ENDPOINT CALLED")
-    print(f"Request method: {request.method}")
-    print(f"Request headers: {dict(request.headers)}")
-    print("=" * 50)
-    
-    # #region agent log
-    import json
-    import time
-    import traceback
     data = request.get_json()
-    print(f"REGISTER: Received data: {data}")
-    try:
-        with open('/tmp/debug.log', 'a') as f:
-            f.write(json.dumps({
-                'timestamp': time.time(),
-                'location': 'auth.py:register',
-                'message': 'Registration attempt started',
-                'data': {
-                    'has_data': data is not None,
-                    'has_email': bool(data.get('email') if data else False),
-                    'has_password': bool(data.get('password') if data else False),
-                    'has_first_name': bool(data.get('first_name') if data else False),
-                    'has_last_name': bool(data.get('last_name') if data else False),
-                    'email': data.get('email') if data else None
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'A'
-            }) + '\n')
-    except Exception as log_err:
-        print(f"Debug log error: {log_err}")
-    # #endregion
     
-    data = request.get_json()
-    print(f"REGISTER: Parsed data: {data}")
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    # Parse data
+    data = {
+        'email': data.get('email', '').strip().lower(),
+        'password': data.get('password', ''),
+        'first_name': data.get('first_name', '').strip(),
+        'last_name': data.get('last_name', '').strip()
+    }
     
     # Validate required fields
-    print(f"REGISTER: Validating fields - email: {bool(data and data.get('email'))}, password: {bool(data and data.get('password'))}, first_name: {bool(data and data.get('first_name'))}, last_name: {bool(data and data.get('last_name'))}")
-    if not data or not data.get('email') or not data.get('password'):
-        print("REGISTER ERROR: Email and password are required")
+    if not data.get('email') or not data.get('password'):
         return jsonify({'error': 'Email and password are required'}), 400
     
     if not data.get('first_name') or not data.get('last_name'):
-        print("REGISTER ERROR: First name and last name are required")
         return jsonify({'error': 'First name and last name are required'}), 400
     
-    # #region agent log
-    try:
-        with open('/tmp/debug.log', 'a') as f:
-            f.write(json.dumps({
-                'timestamp': time.time(),
-                'location': 'auth.py:register',
-                'message': 'Before checking existing user',
-                'data': {'email': data.get('email')},
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'B'
-            }) + '\n')
-    except:
-        pass
-    # #endregion
-    
     # Check if user already exists
-    print(f"REGISTER: Checking if user exists for email: {data['email']}")
     try:
         existing_user = User.query.filter_by(email=data['email']).first()
-        print(f"REGISTER: User exists check complete. Found: {existing_user is not None}")
     except Exception as e:
-        print(f"REGISTER ERROR: Database query failed: {type(e).__name__}: {str(e)}")
         import traceback
-        print(f"REGISTER ERROR TRACEBACK: {traceback.format_exc()}")
         return jsonify({'error': 'Database error. Please try again.'}), 500
     
     if existing_user:
-        print(f"REGISTER: User already exists, returning 400")
         return jsonify({'error': 'User already exists'}), 400
     
     # #region agent log
@@ -257,172 +209,15 @@ def register():
     )
     user.set_password(data['password'])
     
-    # #region agent log
     try:
-        with open('/tmp/debug.log', 'a') as f:
-            f.write(json.dumps({
-                'timestamp': time.time(),
-                'location': 'auth.py:register',
-                'message': 'Before database operations',
-                'data': {
-                    'user_email': user.email,
-                    'has_password_hash': bool(user.password_hash),
-                    'verification_token': verification_token[:10] + '...'
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'D'
-            }) + '\n')
-    except:
-        pass
-    # #endregion
-    
-    try:
-        # #region agent log
-        try:
-            with open('/tmp/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:register',
-                    'message': 'Before db.session.add',
-                    'data': {},
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'E'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
-        
         db.session.add(user)
-        
-        # #region agent log
-        try:
-            with open('/tmp/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:register',
-                    'message': 'Before db.session.commit',
-                    'data': {},
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'E'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
-        
-        print(f"REGISTER: Committing user to database...")
         db.session.commit()
-        print(f"REGISTER: User committed successfully. User ID: {user.id}")
-        
-        # #region agent log
-        try:
-            with open('/tmp/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:register',
-                    'message': 'After db.session.commit - user created',
-                    'data': {
-                        'user_id': user.id,
-                        'user_email': user.email
-                    },
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'F'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
         
         # Send verification email (non-blocking - don't wait for it)
-        # #region agent log
-        try:
-            with open('/tmp/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:register',
-                    'message': 'Before sending verification email',
-                    'data': {
-                        'user_id': user.id,
-                        'user_email': user.email
-                    },
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'G'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
-        
-        print(f"REGISTER: Attempting to send verification email...")
-        # Send email in background - don't block on it
-        try:
-            email_sent = send_verification_email(user, verification_token)
-            print(f"REGISTER: Email send result: {email_sent}")
-        except Exception as email_error:
-            # Don't fail registration if email fails
-            print(f"REGISTER WARNING: Email sending failed (non-critical): {str(email_error)}")
-            email_sent = False
-        
-        # #region agent log
-        try:
-            with open('/tmp/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:register',
-                    'message': 'After sending verification email',
-                    'data': {
-                        'email_sent': email_sent,
-                        'user_id': user.id
-                    },
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'G'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
-        
-        # #region agent log
-        try:
-            with open('/tmp/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:register',
-                    'message': 'Before creating JWT token',
-                    'data': {
-                        'user_id': user.id,
-                        'user_id_type': type(user.id).__name__
-                    },
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'H'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
+        # Registration succeeds even if email fails
+        send_verification_email(user, verification_token)
         
         access_token = create_access_token(identity=str(user.id))
-        
-        # #region agent log
-        try:
-            with open('/tmp/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:register',
-                    'message': 'Registration successful',
-                    'data': {
-                        'user_id': user.id,
-                        'token_created': bool(access_token)
-                    },
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'I'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
         
         return jsonify({
             'message': 'User created successfully. Please check your email to verify your account.',
@@ -430,30 +225,9 @@ def register():
             'user': user.to_dict()
         }), 201
     except Exception as e:
-        # #region agent log
-        error_traceback = traceback.format_exc()
-        print(f"REGISTRATION ERROR: {type(e).__name__}: {str(e)}")
-        print(f"REGISTRATION TRACEBACK: {error_traceback}")
-        try:
-            with open('/tmp/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:register',
-                    'message': 'Registration error caught',
-                    'data': {
-                        'error_type': type(e).__name__,
-                        'error_message': str(e),
-                        'error_traceback': error_traceback
-                    },
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'ERROR'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        return jsonify({'error': 'Failed to create user. Please try again.'}), 500
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
