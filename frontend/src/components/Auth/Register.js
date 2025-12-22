@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import PublicNavbar from '../Layout/PublicNavbar';
 import './Auth.css';
 
 function Register() {
@@ -46,7 +47,9 @@ function Register() {
   };
 
   return (
-    <div className="auth-container">
+    <>
+      <PublicNavbar />
+      <div className="auth-container">
       <div className="auth-card">
         <h2>Register</h2>
         <form onSubmit={handleSubmit}>
@@ -105,6 +108,7 @@ function Register() {
         </p>
       </div>
     </div>
+    </>
   );
 }
 

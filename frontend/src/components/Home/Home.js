@@ -1,19 +1,12 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import PublicNavbar from '../Layout/PublicNavbar';
+import Navbar from '../Layout/Navbar';
 import './Home.css';
 
 function Home() {
   const { isAuthenticated, loading } = useAuth();
-  const navigate = useNavigate();
-
-  // Redirect authenticated users to dashboard
-  React.useEffect(() => {
-    if (isAuthenticated && !loading) {
-      navigate('/dashboard');
-    }
-  }, [isAuthenticated, loading, navigate]);
 
   const features = [
     {
@@ -67,7 +60,7 @@ function Home() {
   if (loading) {
     return (
       <>
-        <PublicNavbar />
+        {isAuthenticated ? <Navbar /> : <PublicNavbar />}
         <div style={{ textAlign: 'center', padding: '40px' }}>Loading...</div>
       </>
     );
@@ -75,7 +68,7 @@ function Home() {
 
   return (
     <>
-      <PublicNavbar />
+      {isAuthenticated ? <Navbar /> : <PublicNavbar />}
       <div className="home-container">
         {/* Hero Section */}
         <section className="hero-section">
@@ -86,12 +79,20 @@ function Home() {
               Track your P&L, returns, and portfolio allocation all in one place.
             </p>
             <div className="hero-buttons">
-              <Link to="/register" className="btn btn-primary btn-large">
-                Get Started Free
-              </Link>
-              <Link to="/login" className="btn btn-secondary btn-large">
-                Login
-              </Link>
+              {isAuthenticated ? (
+                <Link to="/dashboard" className="btn btn-primary btn-large">
+                  Go to Dashboard
+                </Link>
+              ) : (
+                <>
+                  <Link to="/register" className="btn btn-primary btn-large">
+                    Get Started Free
+                  </Link>
+                  <Link to="/login" className="btn btn-secondary btn-large">
+                    Login
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </section>
@@ -147,12 +148,20 @@ function Home() {
             <h2>Ready to Start Tracking Your Options Trades?</h2>
             <p>Get started today and take control of your options trading performance.</p>
             <div className="hero-buttons" style={{ justifyContent: 'center', marginTop: '20px' }}>
-              <Link to="/register" className="btn btn-primary btn-large">
-                Sign Up Free
-              </Link>
-              <Link to="/login" className="btn btn-secondary btn-large">
-                Login
-              </Link>
+              {isAuthenticated ? (
+                <Link to="/dashboard" className="btn btn-primary btn-large">
+                  Go to Dashboard
+                </Link>
+              ) : (
+                <>
+                  <Link to="/register" className="btn btn-primary btn-large">
+                    Sign Up Free
+                  </Link>
+                  <Link to="/login" className="btn btn-secondary btn-large">
+                    Login
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </section>

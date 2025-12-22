@@ -15,7 +15,7 @@ function Navbar() {
     <nav className="navbar">
       <div className="navbar-content">
         <div>
-          <span className="navbar-brand">Options Tracker</span>
+          <Link to="/" className="navbar-brand" style={{ textDecoration: 'none', color: 'white' }}>Options Tracker</Link>
           <Link to="/dashboard">Dashboard</Link>
           <Link to="/positions">Positions</Link>
           <Link to="/trades">Trades</Link>

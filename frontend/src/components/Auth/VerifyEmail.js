@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../utils/api';
+import PublicNavbar from '../Layout/PublicNavbar';
 import './Auth.css';
 
 function VerifyEmail() {
@@ -58,7 +59,9 @@ function VerifyEmail() {
   }, [searchParams, navigate, setUser, isAuthenticated]);
 
   return (
-    <div className="auth-container">
+    <>
+      <PublicNavbar />
+      <div className="auth-container">
       <div className="auth-card">
         <h2>Email Verification</h2>
         {status === 'verifying' && (
@@ -82,6 +85,7 @@ function VerifyEmail() {
         )}
       </div>
     </div>
+    </>
   );
 }
 

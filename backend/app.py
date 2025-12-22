@@ -164,6 +164,21 @@ def initialize_database():
                         conn.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
                         conn.commit()
                         print("✓ Added updated_at column")
+                    
+                    if 'reset_token' not in columns:
+                        print("Adding reset_token column to users table...")
+                        # SQLite doesn't support adding UNIQUE constraint directly, add column first
+                        conn.execute(text("ALTER TABLE users ADD COLUMN reset_token VARCHAR(100)"))
+                        conn.commit()
+                        # For SQLite, we can't add UNIQUE constraint via ALTER TABLE
+                        # The uniqueness will be enforced at application level
+                        print("✓ Added reset_token column")
+                    
+                    if 'reset_token_expires' not in columns:
+                        print("Adding reset_token_expires column to users table...")
+                        conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires DATETIME"))
+                        conn.commit()
+                        print("✓ Added reset_token_expires column")
             
             print("✓ Database initialization complete")
         except Exception as e:

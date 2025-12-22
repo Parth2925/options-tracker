@@ -13,6 +13,58 @@ def generate_verification_token():
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for i in range(32))
 
+def generate_reset_token():
+    """Generate a secure random token for password reset"""
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for i in range(32))
+
+def send_password_reset_email(user, token):
+    """Send password reset email to user"""
+    try:
+        from flask_mail import Message
+        # Get frontend URL from environment or use default
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        reset_url = f"{frontend_url}/reset-password?token={token}"
+        
+        msg = Message(
+            subject='Reset Your Password - Options Tracker',
+            recipients=[user.email],
+            html=f"""
+            <html>
+            <body>
+                <h2>Password Reset Request</h2>
+                <p>Hi {user.first_name},</p>
+                <p>We received a request to reset your password. Click the link below to reset it:</p>
+                <p><a href="{reset_url}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a></p>
+                <p>Or copy and paste this link into your browser:</p>
+                <p>{reset_url}</p>
+                <p>This link will expire in 1 hour.</p>
+                <p>If you didn't request a password reset, please ignore this email. Your password will remain unchanged.</p>
+            </body>
+            </html>
+            """,
+            body=f"""
+            Password Reset Request
+            
+            Hi {user.first_name},
+            
+            We received a request to reset your password. Visit the link below to reset it:
+            {reset_url}
+            
+            This link will expire in 1 hour.
+            
+            If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
+            """
+        )
+        
+        mail = current_app.extensions.get('mail')
+        if mail:
+            mail.send(msg)
+            return True
+    except Exception as e:
+        print(f"Error sending password reset email: {str(e)}")
+    return False
+
 def send_verification_email(user, token):
     """Send verification email to user"""
     try:
@@ -115,16 +167,24 @@ def login():
     if not data or not data.get('email') or not data.get('password'):
         return jsonify({'error': 'Email and password are required'}), 400
     
-    user = User.query.filter_by(email=data['email']).first()
+    email = data['email'].strip() if data.get('email') else None
+    user = User.query.filter_by(email=email).first()
     
-    if not user or not user.check_password(data['password']):
+    if not user:
         return jsonify({'error': 'Invalid email or password'}), 401
     
-    access_token = create_access_token(identity=user.id)
-    return jsonify({
-        'access_token': access_token,
-        'user': user.to_dict()
-    }), 200
+    if not user.check_password(data['password']):
+        return jsonify({'error': 'Invalid email or password'}), 401
+    
+    try:
+        # Convert user.id to string for JWT (consistent with register endpoint)
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify({
+            'access_token': access_token,
+            'user': user.to_dict()
+        }), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to create access token: {str(e)}'}), 500
 
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
@@ -363,10 +423,92 @@ def update_profile():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@auth_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    """Request password reset - sends email with reset link"""
+    data = request.get_json()
+    
+    if not data or not data.get('email'):
+        return jsonify({'error': 'Email is required'}), 400
+    
+    user = User.query.filter_by(email=data['email']).first()
+    
+    # For security, don't reveal if email exists or not
+    # Always return success message to prevent email enumeration
+    if user:
+        # Generate reset token
+        reset_token = generate_reset_token()
+        token_expires = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiration
+        
+        user.reset_token = reset_token
+        user.reset_token_expires = token_expires
+        user.updated_at = datetime.utcnow()
+        
+        try:
+            db.session.commit()
+            send_password_reset_email(user, reset_token)
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error generating reset token: {str(e)}")
+    
+    # Always return success message (security best practice)
+    return jsonify({
+        'message': 'If an account with that email exists, a password reset link has been sent.'
+    }), 200
+
+@auth_bp.route('/reset-password', methods=['POST'])
+def reset_password():
+    """Reset password using token from email"""
+    data = request.get_json()
+    
+    if not data or not data.get('token'):
+        return jsonify({'error': 'Reset token is required'}), 400
+    
+    if not data.get('password'):
+        return jsonify({'error': 'New password is required'}), 400
+    
+    if not data.get('confirm_password'):
+        return jsonify({'error': 'Password confirmation is required'}), 400
+    
+    if data.get('password') != data.get('confirm_password'):
+        return jsonify({'error': 'Passwords do not match'}), 400
+    
+    # Validate password length
+    if len(data['password']) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    
+    # Find user by reset token
+    user = User.query.filter_by(reset_token=data['token']).first()
+    
+    if not user:
+        return jsonify({'error': 'Invalid or expired reset token'}), 400
+    
+    # Check if token has expired
+    if user.reset_token_expires and user.reset_token_expires < datetime.utcnow():
+        # Clear expired token
+        user.reset_token = None
+        user.reset_token_expires = None
+        db.session.commit()
+        return jsonify({'error': 'Reset token has expired. Please request a new password reset.'}), 400
+    
+    # Reset password
+    user.set_password(data['password'])
+    # Clear reset token (one-time use)
+    user.reset_token = None
+    user.reset_token_expires = None
+    user.updated_at = datetime.utcnow()
+    
+    try:
+        db.session.commit()
+        return jsonify({'message': 'Password reset successfully. You can now login with your new password.'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 @auth_bp.route('/change-password', methods=['POST'])
 @jwt_required()
 def change_password():
-    """Change user password"""
+    """Change user password (requires current password)"""
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     

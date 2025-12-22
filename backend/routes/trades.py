@@ -824,3 +824,95 @@ def export_template():
             download_name='trades_template.csv'
         )
 
+@trades_bp.route('/export', methods=['GET'])
+@jwt_required()
+def export_trades():
+    """Export all user's trades to CSV/Excel file"""
+    user_id = get_user_id()
+    format_type = request.args.get('format', 'csv').lower()
+    account_id = request.args.get('account_id', type=int)
+    
+    # Get user's account IDs
+    accounts = Account.query.filter_by(user_id=user_id).all()
+    account_ids = [acc.id for acc in accounts]
+    
+    if not account_ids:
+        return jsonify({'error': 'No accounts found'}), 404
+    
+    # Build query
+    query = Trade.query.filter(Trade.account_id.in_(account_ids))
+    
+    if account_id and account_id in account_ids:
+        query = query.filter_by(account_id=account_id)
+    
+    trades = query.order_by(Trade.trade_date.desc()).all()
+    
+    if not trades:
+        return jsonify({'error': 'No trades found to export'}), 404
+    
+    # Prepare data for export
+    export_data = {
+        'account_id': [],
+        'symbol': [],
+        'trade_type': [],
+        'position_type': [],
+        'strike_price': [],
+        'expiration_date': [],
+        'contract_quantity': [],
+        'trade_price': [],
+        'trade_action': [],
+        'premium': [],
+        'fees': [],
+        'trade_date': [],
+        'close_date': [],
+        'status': [],
+        'parent_trade_id': [],
+        'assignment_price': [],
+        'notes': []
+    }
+    
+    for trade in trades:
+        export_data['account_id'].append(trade.account_id)
+        export_data['symbol'].append(trade.symbol)
+        export_data['trade_type'].append(trade.trade_type)
+        export_data['position_type'].append(trade.position_type)
+        export_data['strike_price'].append(trade.strike_price if trade.strike_price else None)
+        export_data['expiration_date'].append(trade.expiration_date.strftime('%Y-%m-%d') if trade.expiration_date else None)
+        export_data['contract_quantity'].append(trade.contract_quantity)
+        export_data['trade_price'].append(trade.trade_price if trade.trade_price else None)
+        export_data['trade_action'].append(trade.trade_action if trade.trade_action else None)
+        export_data['premium'].append(trade.premium)
+        export_data['fees'].append(trade.fees)
+        export_data['trade_date'].append(trade.trade_date.strftime('%Y-%m-%d') if trade.trade_date else None)
+        export_data['close_date'].append(trade.close_date.strftime('%Y-%m-%d') if trade.close_date else None)
+        export_data['status'].append(trade.status)
+        export_data['parent_trade_id'].append(trade.parent_trade_id if trade.parent_trade_id else None)
+        export_data['assignment_price'].append(trade.assignment_price if trade.assignment_price else None)
+        export_data['notes'].append(trade.notes if trade.notes else '')
+    
+    df = pd.DataFrame(export_data)
+    
+    if format_type == 'excel' or format_type == 'xlsx':
+        # Create Excel file
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Trades')
+        output.seek(0)
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'trades_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+        )
+    else:
+        # Create CSV file
+        output = io.StringIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        return send_file(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'trades_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        )
+

@@ -6,7 +6,7 @@ function PublicNavbar() {
     <nav className="navbar">
       <div className="navbar-content">
         <div>
-          <Link to="/">Options Tracker</Link>
+          <Link to="/" className="navbar-brand" style={{ textDecoration: 'none', color: 'white' }}>Options Tracker</Link>
         </div>
         <div className="navbar-right">
           <Link to="/login" className="btn btn-secondary" style={{ marginRight: '10px' }}>

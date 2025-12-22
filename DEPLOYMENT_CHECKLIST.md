@@ -37,23 +37,45 @@
 
 ## Step 3: Vercel Frontend
 
-- [ ] Sign up for Vercel account
-- [ ] Import GitHub repository
-- [ ] Configure:
-  - Root Directory: `frontend`
-  - Build Command: `npm run build`
-  - Output Directory: `build`
+- [ ] Go to vercel.com and sign up/log in (Continue with GitHub recommended)
+- [ ] Click "New Project" or "Add New..." button in dashboard
+- [ ] Connect GitHub (if first time) or select GitHub as Git provider
+- [ ] Find and import `options-tracker` repository
+- [ ] Configure project settings:
+  - [ ] Project Name: `options-tracker` (or custom)
+  - [ ] Framework Preset: Create React App (should auto-detect)
+  - [ ] **Root Directory: `frontend`** ⚠️ CRITICAL - change from `./` to `frontend`
+  - [ ] Build Command: `npm run build` (verify it's correct)
+  - [ ] Output Directory: `build` (verify it's correct)
+  - [ ] Install Command: `npm install` (usually default)
+- [ ] Add environment variable in Environment Variables section:
+  - [ ] Click "Add" or "Add Variable"
+  - [ ] Key: `REACT_APP_API_URL`
+  - [ ] Value: `https://your-backend-url.onrender.com/api` (your actual Render URL)
+  - [ ] Select all three environments: Production ✅ Preview ✅ Development ✅
+  - [ ] Save/Add the variable
+- [ ] Review all settings one more time
+- [ ] Click "Deploy" button
+- [ ] Watch deployment progress (2-5 minutes)
+- [ ] Verify deployment success (green checkmark)
+- [ ] Click "Visit" or copy the deployment URL
+- [ ] Test the live site (try opening it in browser)
+- [ ] Check browser console for errors (F12 → Console)
+- [ ] Copy and save frontend URL for Step 4
+
+## Step 4: Final Configuration (CORS)
+
+- [ ] Go to Render dashboard → Backend service → Environment tab
 - [ ] Add environment variable:
-  - `REACT_APP_API_URL`: Your Render backend URL + `/api`
-- [ ] Deploy
-- [ ] Copy frontend URL
-
-## Step 4: Final Configuration
-
-- [ ] Update Render backend environment variable:
-  - `FRONTEND_URL`: Your Vercel frontend URL
-- [ ] Redeploy backend (automatic on git push)
-- [ ] Test the live application
+  - [ ] Key: `FRONTEND_URL`
+  - [ ] Value: Your Vercel frontend URL (from Step 3)
+- [ ] Click "Save Changes"
+- [ ] Wait for automatic backend redeployment
+- [ ] Test the live application:
+  - [ ] Visit Vercel frontend URL
+  - [ ] Try registering a new account
+  - [ ] Verify login works
+  - [ ] Check browser console for errors
 
 ## Post-Deployment
 

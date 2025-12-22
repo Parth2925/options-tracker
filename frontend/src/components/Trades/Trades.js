@@ -202,6 +202,82 @@ function Trades() {
           <div>
             <button 
               className="btn btn-secondary" 
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem('token');
+                  const params = new URLSearchParams();
+                  if (selectedAccount && selectedAccount !== 'all') {
+                    params.append('account_id', selectedAccount);
+                  }
+                  params.append('format', 'csv');
+                  const response = await fetch(`${API_BASE_URL}/trades/export?${params.toString()}`, {
+                    headers: {
+                      'Authorization': `Bearer ${token}`
+                    }
+                  });
+                  if (!response.ok) throw new Error('Export failed');
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  const contentDisposition = response.headers.get('Content-Disposition');
+                  const filename = contentDisposition 
+                    ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') 
+                    : 'trades_export.csv';
+                  a.download = filename;
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
+                  showToast('Trades exported successfully!', 'success');
+                } catch (error) {
+                  showToast(error.response?.data?.error || 'Export failed', 'error');
+                }
+              }}
+              style={{ marginRight: '10px' }}
+            >
+              Export CSV
+            </button>
+            <button 
+              className="btn btn-secondary" 
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem('token');
+                  const params = new URLSearchParams();
+                  if (selectedAccount && selectedAccount !== 'all') {
+                    params.append('account_id', selectedAccount);
+                  }
+                  params.append('format', 'xlsx');
+                  const response = await fetch(`${API_BASE_URL}/trades/export?${params.toString()}`, {
+                    headers: {
+                      'Authorization': `Bearer ${token}`
+                    }
+                  });
+                  if (!response.ok) throw new Error('Export failed');
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  const contentDisposition = response.headers.get('Content-Disposition');
+                  const filename = contentDisposition 
+                    ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') 
+                    : 'trades_export.xlsx';
+                  a.download = filename;
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
+                  showToast('Trades exported successfully!', 'success');
+                } catch (error) {
+                  showToast(error.response?.data?.error || 'Export failed', 'error');
+                }
+              }}
+              style={{ marginRight: '10px' }}
+            >
+              Export Excel
+            </button>
+            <button 
+              className="btn btn-secondary" 
               onClick={() => setShowImport(!showImport)} 
               style={{ marginRight: '10px' }}
             >
