@@ -66,7 +66,12 @@ def send_password_reset_email(user, token):
     return False
 
 def send_verification_email(user, token):
-    """Send verification email to user"""
+    """Send verification email to user (non-blocking with timeout)"""
+    import signal
+    
+    def timeout_handler(signum, frame):
+        raise TimeoutError("Email sending timed out")
+    
     try:
         from flask_mail import Message
         # Get frontend URL from environment or use default
@@ -106,10 +111,38 @@ def send_verification_email(user, token):
         
         mail = current_app.extensions.get('mail')
         if mail:
-            mail.send(msg)
-            return True
+            # Set a timeout for email sending (3 seconds)
+            # Use threading to make it non-blocking
+            import threading
+            email_sent = [False]
+            email_error = [None]
+            
+            def send_email():
+                try:
+                    mail.send(msg)
+                    email_sent[0] = True
+                except Exception as e:
+                    email_error[0] = str(e)
+            
+            # Start email sending in a thread
+            email_thread = threading.Thread(target=send_email)
+            email_thread.daemon = True
+            email_thread.start()
+            email_thread.join(timeout=3)  # Wait max 3 seconds
+            
+            if email_thread.is_alive():
+                print(f"WARNING: Email sending timed out after 3 seconds for {user.email}")
+                return False
+            
+            if email_error[0]:
+                print(f"Error sending verification email: {email_error[0]}")
+                return False
+            
+            return email_sent[0]
     except Exception as e:
         print(f"Error sending verification email: {str(e)}")
+        import traceback
+        print(f"Email error traceback: {traceback.format_exc()}")
     return False
 
 @auth_bp.route('/register', methods=['POST'])
