@@ -18,43 +18,87 @@ def generate_reset_token():
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for i in range(32))
 
+def send_email_via_sendgrid(to_email, subject, html_content, text_content):
+    """Send email using SendGrid API (HTTP-based, works on Render free tier)"""
+    try:
+        sendgrid_api_key = os.getenv('SENDGRID_API_KEY')
+        if not sendgrid_api_key:
+            print("WARNING: SENDGRID_API_KEY not set, falling back to Flask-Mail")
+            return False
+        
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
+        
+        message = Mail(
+            from_email=os.getenv('SENDGRID_FROM_EMAIL', 'noreply@optionstracker.com'),
+            to_emails=to_email,
+            subject=subject,
+            html_content=html_content,
+            plain_text_content=text_content
+        )
+        
+        sg = SendGridAPIClient(sendgrid_api_key)
+        response = sg.send(message)
+        
+        if response.status_code in [200, 202]:
+            print(f"Email sent successfully via SendGrid to {to_email}")
+            return True
+        else:
+            print(f"SendGrid API error: Status {response.status_code}, Body: {response.body}")
+            return False
+            
+    except Exception as e:
+        print(f"Error sending email via SendGrid: {str(e)}")
+        import traceback
+        print(f"SendGrid error traceback: {traceback.format_exc()}")
+        return False
+
 def send_password_reset_email(user, token):
     """Send password reset email to user"""
     try:
-        from flask_mail import Message
         # Get frontend URL from environment or use default
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
         reset_url = f"{frontend_url}/reset-password?token={token}"
         
+        html_content = f"""
+        <html>
+        <body>
+            <h2>Password Reset Request</h2>
+            <p>Hi {user.first_name},</p>
+            <p>We received a request to reset your password. Click the link below to reset it:</p>
+            <p><a href="{reset_url}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a></p>
+            <p>Or copy and paste this link into your browser:</p>
+            <p>{reset_url}</p>
+            <p>This link will expire in 1 hour.</p>
+            <p>If you didn't request a password reset, please ignore this email. Your password will remain unchanged.</p>
+        </body>
+        </html>
+        """
+        
+        text_content = f"""
+        Password Reset Request
+        
+        Hi {user.first_name},
+        
+        We received a request to reset your password. Visit the link below to reset it:
+        {reset_url}
+        
+        This link will expire in 1 hour.
+        
+        If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
+        """
+        
+        # Try SendGrid first (works on Render free tier)
+        if send_email_via_sendgrid(user.email, 'Reset Your Password - Options Tracker', html_content, text_content):
+            return True
+        
+        # Fallback to Flask-Mail if SendGrid not configured
+        from flask_mail import Message
         msg = Message(
             subject='Reset Your Password - Options Tracker',
             recipients=[user.email],
-            html=f"""
-            <html>
-            <body>
-                <h2>Password Reset Request</h2>
-                <p>Hi {user.first_name},</p>
-                <p>We received a request to reset your password. Click the link below to reset it:</p>
-                <p><a href="{reset_url}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a></p>
-                <p>Or copy and paste this link into your browser:</p>
-                <p>{reset_url}</p>
-                <p>This link will expire in 1 hour.</p>
-                <p>If you didn't request a password reset, please ignore this email. Your password will remain unchanged.</p>
-            </body>
-            </html>
-            """,
-            body=f"""
-            Password Reset Request
-            
-            Hi {user.first_name},
-            
-            We received a request to reset your password. Visit the link below to reset it:
-            {reset_url}
-            
-            This link will expire in 1 hour.
-            
-            If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
-            """
+            html=html_content,
+            body=text_content
         )
         
         mail = current_app.extensions.get('mail')
@@ -63,115 +107,92 @@ def send_password_reset_email(user, token):
             return True
     except Exception as e:
         print(f"Error sending password reset email: {str(e)}")
+        import traceback
+        print(f"Password reset email traceback: {traceback.format_exc()}")
     return False
 
 def send_verification_email(user, token):
-    """Send verification email to user (non-blocking with timeout)"""
-    import signal
-    
-    def timeout_handler(signum, frame):
-        raise TimeoutError("Email sending timed out")
-    
+    """Send verification email to user (asynchronous, uses SendGrid API)"""
     try:
-        from flask_mail import Message
         # Get frontend URL from environment or use default
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
         verification_url = f"{frontend_url}/verify-email?token={token}"
         
-        msg = Message(
-            subject='Verify Your Email - Options Tracker',
-            recipients=[user.email],
-            html=f"""
-            <html>
-            <body>
-                <h2>Welcome to Options Tracker!</h2>
-                <p>Hi {user.first_name},</p>
-                <p>Thank you for registering. Please verify your email address by clicking the link below:</p>
-                <p><a href="{verification_url}" style="background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Verify Email</a></p>
-                <p>Or copy and paste this link into your browser:</p>
-                <p>{verification_url}</p>
-                <p>This link will expire in 24 hours.</p>
-                <p>If you didn't create this account, please ignore this email.</p>
-            </body>
-            </html>
-            """,
-            body=f"""
-            Welcome to Options Tracker!
-            
-            Hi {user.first_name},
-            
-            Thank you for registering. Please verify your email address by visiting:
-            {verification_url}
-            
-            This link will expire in 24 hours.
-            
-            If you didn't create this account, please ignore this email.
-            """
-        )
+        html_content = f"""
+        <html>
+        <body>
+            <h2>Welcome to Options Tracker!</h2>
+            <p>Hi {user.first_name},</p>
+            <p>Thank you for registering. Please verify your email address by clicking the link below:</p>
+            <p><a href="{verification_url}" style="background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Verify Email</a></p>
+            <p>Or copy and paste this link into your browser:</p>
+            <p>{verification_url}</p>
+            <p>This link will expire in 24 hours.</p>
+            <p>If you didn't create this account, please ignore this email.</p>
+        </body>
+        </html>
+        """
         
-        mail = current_app.extensions.get('mail')
-        if mail:
-            # Send email asynchronously - don't wait for it (fire and forget)
-            # This prevents registration from timing out due to slow SMTP
-            import threading
-            from flask import copy_current_request_context
-            
-            @copy_current_request_context
-            def send_email_async():
-                # Retry logic for email sending (up to 2 retries)
-                max_retries = 2
-                retry_delay = 2  # seconds
+        text_content = f"""
+        Welcome to Options Tracker!
+        
+        Hi {user.first_name},
+        
+        Thank you for registering. Please verify your email address by visiting:
+        {verification_url}
+        
+        This link will expire in 24 hours.
+        
+        If you didn't create this account, please ignore this email.
+        """
+        
+        # Send email asynchronously - don't wait for it (fire and forget)
+        # This prevents registration from timing out
+        import threading
+        from flask import copy_current_request_context
+        
+        @copy_current_request_context
+        def send_email_async():
+            try:
+                # Try SendGrid first (works on Render free tier via HTTP)
+                if send_email_via_sendgrid(user.email, 'Verify Your Email - Options Tracker', html_content, text_content):
+                    print(f"Verification email sent successfully via SendGrid to {user.email}")
+                    return
                 
-                for attempt in range(max_retries + 1):
-                    try:
-                        # Access mail from current_app in the thread context
-                        from flask import current_app
-                        import time
-                        mail_instance = current_app.extensions.get('mail')
-                        if mail_instance:
-                            if attempt > 0:
-                                print(f"Retry {attempt}: Starting email send to {user.email}...")
-                                time.sleep(retry_delay)
-                            else:
-                                print(f"Starting email send to {user.email}...")
-                            
-                            mail_instance.send(msg)
-                            print(f"Email sent successfully to {user.email}")
-                            return  # Success - exit function
-                        else:
-                            print(f"WARNING: Mail extension not available for {user.email}")
-                            return
-                    except OSError as e:
-                        # Network errors - retry
-                        error_msg = str(e)
-                        print(f"Network error sending email to {user.email} (attempt {attempt + 1}/{max_retries + 1}): {error_msg}")
-                        if attempt < max_retries:
-                            print(f"Will retry in {retry_delay} seconds...")
-                            continue
-                        else:
-                            print(f"Failed to send email to {user.email} after {max_retries + 1} attempts. User can resend from profile.")
-                            import traceback
-                            print(f"Final email error traceback: {traceback.format_exc()}")
-                    except Exception as e:
-                        # Other errors - log and don't retry
-                        print(f"Error sending email to {user.email}: {str(e)}")
-                        import traceback
-                        print(f"Email error traceback: {traceback.format_exc()}")
-                        return
-            
-            # Start email sending in background thread - don't wait for it
-            email_thread = threading.Thread(target=send_email_async)
-            email_thread.daemon = True
-            email_thread.start()
-            print(f"Email sending started in background for {user.email}")
-            
-            # Return True immediately - email will be sent in background
-            # Even if it fails, user can resend verification email from profile
-            return True
+                # Fallback to Flask-Mail if SendGrid not configured (for local dev)
+                from flask_mail import Message
+                from flask import current_app
+                msg = Message(
+                    subject='Verify Your Email - Options Tracker',
+                    recipients=[user.email],
+                    html=html_content,
+                    body=text_content
+                )
+                
+                mail = current_app.extensions.get('mail')
+                if mail:
+                    mail.send(msg)
+                    print(f"Verification email sent successfully via Flask-Mail to {user.email}")
+                else:
+                    print(f"WARNING: No email service configured for {user.email}")
+            except Exception as e:
+                print(f"Error sending verification email to {user.email}: {str(e)}")
+                import traceback
+                print(f"Email error traceback: {traceback.format_exc()}")
+        
+        # Start email sending in background thread - don't wait for it
+        email_thread = threading.Thread(target=send_email_async)
+        email_thread.daemon = True
+        email_thread.start()
+        print(f"Email sending started in background for {user.email}")
+        
+        # Return True immediately - email will be sent in background
+        # Even if it fails, user can resend verification email from profile
+        return True
     except Exception as e:
-        print(f"Error sending verification email: {str(e)}")
+        print(f"Error setting up verification email: {str(e)}")
         import traceback
-        print(f"Email error traceback: {traceback.format_exc()}")
+        print(f"Email setup error traceback: {traceback.format_exc()}")
     return False
 
 @auth_bp.route('/register', methods=['POST'])
