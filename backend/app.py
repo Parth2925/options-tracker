@@ -36,7 +36,11 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,  # Verify connections before using
     'pool_recycle': 300,    # Recycle connections after 5 minutes
     'pool_size': 5,         # Connection pool size
-    'max_overflow': 10      # Max overflow connections
+    'max_overflow': 10,     # Max overflow connections
+    'connect_args': {
+        'connect_timeout': 10,  # 10 second connection timeout
+        'options': '-c statement_timeout=5000'  # 5 second query timeout for PostgreSQL
+    } if database_url.startswith('postgresql://') or database_url.startswith('postgres://') else {}
 }
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
