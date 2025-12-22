@@ -112,19 +112,31 @@ def send_verification_email(user, token):
         mail = current_app.extensions.get('mail')
         if mail:
             # Set a timeout for email sending (3 seconds)
-            # Use threading to make it non-blocking
+            # Use threading to make it non-blocking, but preserve application context
             import threading
+            from flask import copy_current_request_context
             email_sent = [False]
             email_error = [None]
             
+            @copy_current_request_context
             def send_email():
                 try:
-                    mail.send(msg)
-                    email_sent[0] = True
+                    # Access mail from current_app in the thread context
+                    from flask import current_app
+                    mail_instance = current_app.extensions.get('mail')
+                    if mail_instance:
+                        mail_instance.send(msg)
+                        email_sent[0] = True
+                        print(f"Email sent successfully to {user.email}")
+                    else:
+                        email_error[0] = "Mail extension not available"
                 except Exception as e:
                     email_error[0] = str(e)
+                    print(f"Error in email thread: {str(e)}")
+                    import traceback
+                    print(f"Email thread traceback: {traceback.format_exc()}")
             
-            # Start email sending in a thread
+            # Start email sending in a thread with application context
             email_thread = threading.Thread(target=send_email)
             email_thread.daemon = True
             email_thread.start()
