@@ -111,46 +111,37 @@ def send_verification_email(user, token):
         
         mail = current_app.extensions.get('mail')
         if mail:
-            # Set a timeout for email sending (3 seconds)
-            # Use threading to make it non-blocking, but preserve application context
+            # Send email asynchronously - don't wait for it (fire and forget)
+            # This prevents registration from timing out due to slow SMTP
             import threading
             from flask import copy_current_request_context
-            email_sent = [False]
-            email_error = [None]
             
             @copy_current_request_context
-            def send_email():
+            def send_email_async():
                 try:
                     # Access mail from current_app in the thread context
                     from flask import current_app
                     mail_instance = current_app.extensions.get('mail')
                     if mail_instance:
+                        print(f"Starting email send to {user.email}...")
                         mail_instance.send(msg)
-                        email_sent[0] = True
                         print(f"Email sent successfully to {user.email}")
                     else:
-                        email_error[0] = "Mail extension not available"
+                        print(f"WARNING: Mail extension not available for {user.email}")
                 except Exception as e:
-                    email_error[0] = str(e)
-                    print(f"Error in email thread: {str(e)}")
+                    print(f"Error sending email to {user.email}: {str(e)}")
                     import traceback
-                    print(f"Email thread traceback: {traceback.format_exc()}")
+                    print(f"Email error traceback: {traceback.format_exc()}")
             
-            # Start email sending in a thread with application context
-            email_thread = threading.Thread(target=send_email)
+            # Start email sending in background thread - don't wait for it
+            email_thread = threading.Thread(target=send_email_async)
             email_thread.daemon = True
             email_thread.start()
-            email_thread.join(timeout=3)  # Wait max 3 seconds
+            print(f"Email sending started in background for {user.email}")
             
-            if email_thread.is_alive():
-                print(f"WARNING: Email sending timed out after 3 seconds for {user.email}")
-                return False
-            
-            if email_error[0]:
-                print(f"Error sending verification email: {email_error[0]}")
-                return False
-            
-            return email_sent[0]
+            # Return True immediately - email will be sent in background
+            # Even if it fails, user can resend verification email from profile
+            return True
     except Exception as e:
         print(f"Error sending verification email: {str(e)}")
         import traceback
