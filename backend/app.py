@@ -94,16 +94,6 @@ print(f"  Allowed origins: {allowed_origins}")
 print(f"  Frontend URL from env: {frontend_url}")
 print(f"  Flask ENV: {os.getenv('FLASK_ENV', 'not set')}")
 
-# Add request logging middleware to see ALL requests
-@app.before_request
-def log_request_info():
-    print(f"\n{'='*60}")
-    print(f"REQUEST: {request.method} {request.path}")
-    print(f"Origin: {request.headers.get('Origin', 'Not set')}")
-    print(f"Headers: {dict(request.headers)}")
-    if request.method == 'POST' and request.is_json:
-        print(f"JSON Data: {request.get_json()}")
-    print(f"{'='*60}\n")
 
 # Register blueprints
 app.register_blueprint(auth_bp, url_prefix='/api/auth')

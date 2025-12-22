@@ -100,11 +100,9 @@ To create a Personal Access Token:
    - `DATABASE_URL`: Paste the Internal Database URL from PostgreSQL
    - `JWT_SECRET_KEY`: Generate a secure random string (you can use: `openssl rand -hex 32`)
    - `FINNHUB_API_KEY`: `d525qj1r01qu5pvmiv2gd525qj1r01qu5pvmiv30`
-   - `SENDGRID_API_KEY`: Your SendGrid API key (see "Email Setup with SendGrid" section below)
-   - `SENDGRID_FROM_EMAIL`: The verified sender email in SendGrid (e.g., `noreply@yourdomain.com` or your verified email)
    - `FLASK_ENV`: `production`
    
-   **Note**: Render's free tier blocks SMTP ports, so we use SendGrid (HTTP-based) instead. See "Email Setup with SendGrid" section below.
+   **Note**: Email verification is optional. The site works without email sending configured. Email sending may not work on Render's free tier due to SMTP port restrictions, but registration will still succeed.
 
 5. Click **"Create Web Service"**
 6. Wait for deployment to complete (5-10 minutes)
@@ -121,39 +119,6 @@ To create a Personal Access Token:
 **No manual steps required!** Just deploy and the database will be ready.
 
 **Alternative (if needed)**: If you need to manually trigger initialization, you can call the `/api/init-db` endpoint (requires authentication) after logging in.
-
-### Email Setup with SendGrid
-
-**Important**: Render's free tier blocks outbound SMTP connections (ports 25, 465, 587), so we use SendGrid's HTTP-based API instead.
-
-#### Step 2.5.1: Create SendGrid Account
-
-1. Go to [SendGrid.com](https://sendgrid.com)
-2. Click **"Start for Free"** or **"Sign Up"**
-3. Complete the signup process (free tier includes 100 emails/day)
-4. Verify your email address
-
-#### Step 2.5.2: Create API Key
-
-1. In SendGrid dashboard, go to **Settings** → **API Keys** (or search for "API Keys")
-2. Click **"Create API Key"**
-3. Give it a name (e.g., "Options Tracker Production")
-4. Select **"Full Access"** or **"Restricted Access"** with "Mail Send" permissions
-5. Click **"Create & View"**
-6. **Copy the API key immediately** (you won't be able to see it again!)
-7. Paste it as `SENDGRID_API_KEY` in Render environment variables
-
-#### Step 2.5.3: Verify Sender Email
-
-1. In SendGrid dashboard, go to **Settings** → **Sender Authentication**
-2. Click **"Verify a Single Sender"** (for testing) or **"Authenticate Your Domain"** (for production)
-3. For single sender:
-   - Enter your email address (e.g., `noreply@yourdomain.com` or use your personal email)
-   - Fill in the required information
-   - Check your email and click the verification link
-4. Use this verified email as `SENDGRID_FROM_EMAIL` in Render environment variables
-
-**Note**: For local development, you can still use Flask-Mail with Gmail SMTP. SendGrid is only required for production on Render's free tier.
 
 ## Step 3: Deploy Frontend to Vercel
 
@@ -440,8 +405,6 @@ If you need to update the database schema:
 - `DATABASE_URL` - PostgreSQL connection string
 - `JWT_SECRET_KEY` - Secret key for JWT tokens
 - `FINNHUB_API_KEY` - API key for market data
-- `SENDGRID_API_KEY` - SendGrid API key for sending emails (required for production)
-- `SENDGRID_FROM_EMAIL` - Verified sender email address in SendGrid
 - `FRONTEND_URL` - Frontend URL for CORS
 
 ### Frontend (Vercel)
