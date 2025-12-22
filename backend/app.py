@@ -131,13 +131,37 @@ def initialize_database():
                 with db.engine.connect() as conn:
                     if 'first_name' not in columns:
                         print("Adding first_name column to users table...")
-                        conn.execute(text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100) NOT NULL DEFAULT ''"))
+                        # For PostgreSQL, add column as nullable first, then update and set NOT NULL
+                        try:
+                            conn.execute(text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100)"))
+                            conn.execute(text("UPDATE users SET first_name = '' WHERE first_name IS NULL"))
+                            conn.execute(text("ALTER TABLE users ALTER COLUMN first_name SET NOT NULL"))
+                            conn.execute(text("ALTER TABLE users ALTER COLUMN first_name SET DEFAULT ''"))
+                        except Exception as e:
+                            # If above fails, try simpler approach (works for SQLite and some PostgreSQL versions)
+                            try:
+                                conn.execute(text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100) NOT NULL DEFAULT ''"))
+                            except:
+                                # Last resort: add as nullable
+                                conn.execute(text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100) DEFAULT ''"))
                         conn.commit()
                         print("✓ Added first_name column")
                     
                     if 'last_name' not in columns:
                         print("Adding last_name column to users table...")
-                        conn.execute(text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100) NOT NULL DEFAULT ''"))
+                        # For PostgreSQL, add column as nullable first, then update and set NOT NULL
+                        try:
+                            conn.execute(text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100)"))
+                            conn.execute(text("UPDATE users SET last_name = '' WHERE last_name IS NULL"))
+                            conn.execute(text("ALTER TABLE users ALTER COLUMN last_name SET NOT NULL"))
+                            conn.execute(text("ALTER TABLE users ALTER COLUMN last_name SET DEFAULT ''"))
+                        except Exception as e:
+                            # If above fails, try simpler approach (works for SQLite and some PostgreSQL versions)
+                            try:
+                                conn.execute(text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100) NOT NULL DEFAULT ''"))
+                            except:
+                                # Last resort: add as nullable
+                                conn.execute(text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100) DEFAULT ''"))
                         conn.commit()
                         print("✓ Added last_name column")
                     
