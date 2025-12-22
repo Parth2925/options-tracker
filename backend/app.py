@@ -130,10 +130,13 @@ def initialize_database():
                 
                 # Detect database type for proper column type syntax
                 db_url = str(db.engine.url)
-                is_postgres = 'postgres' in db_url.lower()
+                db_url_lower = db_url.lower()
+                # Check for PostgreSQL (postgresql://, postgres://, or postgresql+psycopg2://)
+                is_postgres = 'postgresql' in db_url_lower or 'postgres' in db_url_lower
                 datetime_type = 'TIMESTAMP' if is_postgres else 'DATETIME'
                 print(f"Database URL: {db_url[:50]}...")  # Log first 50 chars for debugging
                 print(f"Is PostgreSQL: {is_postgres}, datetime_type: {datetime_type}")
+                print(f"Database driver: {db.engine.driver}")
                 
                 with db.engine.connect() as conn:
                     if 'first_name' not in columns:
