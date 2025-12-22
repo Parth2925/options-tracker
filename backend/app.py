@@ -17,8 +17,27 @@ load_dotenv()
 app = Flask(__name__)
 
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///options_tracker.db')
+database_url = os.getenv('DATABASE_URL', 'sqlite:///options_tracker.db')
+
+# Fix PostgreSQL SSL connection issues on Render
+# If using PostgreSQL, ensure SSL mode is set correctly
+if database_url.startswith('postgresql://') or database_url.startswith('postgres://'):
+    # Parse the database URL and add SSL parameters if not present
+    if 'sslmode' not in database_url:
+        # Add sslmode=require for Render PostgreSQL
+        separator = '&' if '?' in database_url else '?'
+        database_url = f"{database_url}{separator}sslmode=require"
+    print(f"Database URL configured with SSL: {database_url[:50]}...")
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Add connection pool settings to handle connection issues
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,  # Verify connections before using
+    'pool_recycle': 300,    # Recycle connections after 5 minutes
+    'pool_size': 5,         # Connection pool size
+    'max_overflow': 10      # Max overflow connections
+}
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 app.config['FINNHUB_API_KEY'] = os.getenv('FINNHUB_API_KEY', 'd525qj1r01qu5pvmiv2gd525qj1r01qu5pvmiv30')
