@@ -3,7 +3,13 @@ import axios from 'axios';
 // Use absolute URL to bypass proxy issues, or relative if REACT_APP_API_URL is not set
 // The proxy in package.json should handle this, but if it doesn't work, use absolute URL
 // Note: Port 5000 is often used by macOS AirPlay, so we use 5001
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+let API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+
+// Ensure API_BASE_URL ends with /api (backend routes are under /api)
+if (API_BASE_URL && !API_BASE_URL.endsWith('/api')) {
+  // If it doesn't end with /api, append it
+  API_BASE_URL = API_BASE_URL.endsWith('/') ? `${API_BASE_URL}api` : `${API_BASE_URL}/api`;
+}
 
 // Log API URL in production for debugging (remove in production after fixing)
 if (process.env.NODE_ENV === 'production') {
