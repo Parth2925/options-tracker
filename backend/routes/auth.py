@@ -114,11 +114,18 @@ def send_verification_email(user, token):
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
+    print("=" * 50)
+    print("REGISTER ENDPOINT CALLED")
+    print(f"Request method: {request.method}")
+    print(f"Request headers: {dict(request.headers)}")
+    print("=" * 50)
+    
     # #region agent log
     import json
     import time
     import traceback
     data = request.get_json()
+    print(f"REGISTER: Received data: {data}")
     try:
         with open('/tmp/debug.log', 'a') as f:
             f.write(json.dumps({
@@ -142,12 +149,16 @@ def register():
     # #endregion
     
     data = request.get_json()
+    print(f"REGISTER: Parsed data: {data}")
     
     # Validate required fields
+    print(f"REGISTER: Validating fields - email: {bool(data and data.get('email'))}, password: {bool(data and data.get('password'))}, first_name: {bool(data and data.get('first_name'))}, last_name: {bool(data and data.get('last_name'))}")
     if not data or not data.get('email') or not data.get('password'):
+        print("REGISTER ERROR: Email and password are required")
         return jsonify({'error': 'Email and password are required'}), 400
     
     if not data.get('first_name') or not data.get('last_name'):
+        print("REGISTER ERROR: First name and last name are required")
         return jsonify({'error': 'First name and last name are required'}), 400
     
     # #region agent log
