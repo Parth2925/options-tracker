@@ -440,7 +440,8 @@ If you need to update the database schema:
 - `DATABASE_URL` - PostgreSQL connection string
 - `JWT_SECRET_KEY` - Secret key for JWT tokens
 - `FINNHUB_API_KEY` - API key for market data
-- `MAIL_*` - Email configuration
+- `SENDGRID_API_KEY` - SendGrid API key for sending emails (required for production)
+- `SENDGRID_FROM_EMAIL` - Verified sender email address in SendGrid
 - `FRONTEND_URL` - Frontend URL for CORS
 
 ### Frontend (Vercel)
