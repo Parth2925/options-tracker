@@ -132,6 +132,8 @@ def initialize_database():
                 db_url = str(db.engine.url)
                 is_postgres = 'postgres' in db_url.lower()
                 datetime_type = 'TIMESTAMP' if is_postgres else 'DATETIME'
+                print(f"Database URL: {db_url[:50]}...")  # Log first 50 chars for debugging
+                print(f"Is PostgreSQL: {is_postgres}, datetime_type: {datetime_type}")
                 
                 with db.engine.connect() as conn:
                     if 'first_name' not in columns:
@@ -210,8 +212,10 @@ def initialize_database():
                         print("✓ Added reset_token column")
                     
                     if 'reset_token_expires' not in columns:
-                        print("Adding reset_token_expires column to users table...")
-                        conn.execute(text(f"ALTER TABLE users ADD COLUMN reset_token_expires {datetime_type}"))
+                        print(f"Adding reset_token_expires column to users table... (using {datetime_type})")
+                        sql = f"ALTER TABLE users ADD COLUMN reset_token_expires {datetime_type}"
+                        print(f"Executing SQL: {sql}")
+                        conn.execute(text(sql))
                         conn.commit()
                         print("✓ Added reset_token_expires column")
             
