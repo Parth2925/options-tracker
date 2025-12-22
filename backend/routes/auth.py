@@ -178,8 +178,18 @@ def register():
     # #endregion
     
     # Check if user already exists
-    existing_user = User.query.filter_by(email=data['email']).first()
+    print(f"REGISTER: Checking if user exists for email: {data['email']}")
+    try:
+        existing_user = User.query.filter_by(email=data['email']).first()
+        print(f"REGISTER: User exists check complete. Found: {existing_user is not None}")
+    except Exception as e:
+        print(f"REGISTER ERROR: Database query failed: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f"REGISTER ERROR TRACEBACK: {traceback.format_exc()}")
+        return jsonify({'error': 'Database error. Please try again.'}), 500
+    
     if existing_user:
+        print(f"REGISTER: User already exists, returning 400")
         return jsonify({'error': 'User already exists'}), 400
     
     # #region agent log
@@ -272,7 +282,9 @@ def register():
             pass
         # #endregion
         
+        print(f"REGISTER: Committing user to database...")
         db.session.commit()
+        print(f"REGISTER: User committed successfully. User ID: {user.id}")
         
         # #region agent log
         try:
@@ -293,7 +305,7 @@ def register():
             pass
         # #endregion
         
-        # Send verification email
+        # Send verification email (non-blocking - don't wait for it)
         # #region agent log
         try:
             with open('/tmp/debug.log', 'a') as f:
@@ -313,7 +325,15 @@ def register():
             pass
         # #endregion
         
-        email_sent = send_verification_email(user, verification_token)
+        print(f"REGISTER: Attempting to send verification email...")
+        # Send email in background - don't block on it
+        try:
+            email_sent = send_verification_email(user, verification_token)
+            print(f"REGISTER: Email send result: {email_sent}")
+        except Exception as email_error:
+            # Don't fail registration if email fails
+            print(f"REGISTER WARNING: Email sending failed (non-critical): {str(email_error)}")
+            email_sent = False
         
         # #region agent log
         try:
