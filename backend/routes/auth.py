@@ -118,20 +118,46 @@ def send_verification_email(user, token):
             
             @copy_current_request_context
             def send_email_async():
-                try:
-                    # Access mail from current_app in the thread context
-                    from flask import current_app
-                    mail_instance = current_app.extensions.get('mail')
-                    if mail_instance:
-                        print(f"Starting email send to {user.email}...")
-                        mail_instance.send(msg)
-                        print(f"Email sent successfully to {user.email}")
-                    else:
-                        print(f"WARNING: Mail extension not available for {user.email}")
-                except Exception as e:
-                    print(f"Error sending email to {user.email}: {str(e)}")
-                    import traceback
-                    print(f"Email error traceback: {traceback.format_exc()}")
+                # Retry logic for email sending (up to 2 retries)
+                max_retries = 2
+                retry_delay = 2  # seconds
+                
+                for attempt in range(max_retries + 1):
+                    try:
+                        # Access mail from current_app in the thread context
+                        from flask import current_app
+                        import time
+                        mail_instance = current_app.extensions.get('mail')
+                        if mail_instance:
+                            if attempt > 0:
+                                print(f"Retry {attempt}: Starting email send to {user.email}...")
+                                time.sleep(retry_delay)
+                            else:
+                                print(f"Starting email send to {user.email}...")
+                            
+                            mail_instance.send(msg)
+                            print(f"Email sent successfully to {user.email}")
+                            return  # Success - exit function
+                        else:
+                            print(f"WARNING: Mail extension not available for {user.email}")
+                            return
+                    except OSError as e:
+                        # Network errors - retry
+                        error_msg = str(e)
+                        print(f"Network error sending email to {user.email} (attempt {attempt + 1}/{max_retries + 1}): {error_msg}")
+                        if attempt < max_retries:
+                            print(f"Will retry in {retry_delay} seconds...")
+                            continue
+                        else:
+                            print(f"Failed to send email to {user.email} after {max_retries + 1} attempts. User can resend from profile.")
+                            import traceback
+                            print(f"Final email error traceback: {traceback.format_exc()}")
+                    except Exception as e:
+                        # Other errors - log and don't retry
+                        print(f"Error sending email to {user.email}: {str(e)}")
+                        import traceback
+                        print(f"Email error traceback: {traceback.format_exc()}")
+                        return
             
             # Start email sending in background thread - don't wait for it
             email_thread = threading.Thread(target=send_email_async)
