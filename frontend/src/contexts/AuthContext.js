@@ -63,12 +63,15 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (firstName, lastName, email, password) => {
     try {
+      console.log('Register: Making API call to /auth/register');
+      console.log('Register: API base URL:', api.defaults.baseURL);
       const response = await api.post('/auth/register', { 
         first_name: firstName,
         last_name: lastName,
         email, 
         password 
       });
+      console.log('Register: Response received:', response.status);
       const { access_token, user } = response.data;
       
       localStorage.setItem('token', access_token);
@@ -78,9 +81,13 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true, message: response.data.message };
     } catch (error) {
+      console.error('Register: Error occurred:', error);
+      console.error('Register: Error response:', error.response);
+      console.error('Register: Error message:', error.message);
+      console.error('Register: Error stack:', error.stack);
       return {
         success: false,
-        error: error.response?.data?.error || 'Registration failed',
+        error: error.response?.data?.error || error.message || 'Registration failed',
       };
     }
   };

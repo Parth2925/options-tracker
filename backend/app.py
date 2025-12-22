@@ -64,6 +64,12 @@ CORS(app,
      }}
 )
 
+# Log CORS configuration for debugging
+print(f"CORS Configuration:")
+print(f"  Allowed origins: {allowed_origins}")
+print(f"  Frontend URL from env: {frontend_url}")
+print(f"  Flask ENV: {os.getenv('FLASK_ENV', 'not set')}")
+
 # Register blueprints
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(accounts_bp, url_prefix='/api/accounts')

@@ -5,6 +5,12 @@ import axios from 'axios';
 // Note: Port 5000 is often used by macOS AirPlay, so we use 5001
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
+// Log API URL in production for debugging (remove in production after fixing)
+if (process.env.NODE_ENV === 'production') {
+  console.log('API_BASE_URL:', API_BASE_URL);
+  console.log('REACT_APP_API_URL env var:', process.env.REACT_APP_API_URL);
+}
+
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
