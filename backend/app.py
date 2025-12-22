@@ -128,6 +128,11 @@ def initialize_database():
             if 'users' in inspector.get_table_names():
                 columns = [col['name'] for col in inspector.get_columns('users')]
                 
+                # Detect database type for proper column type syntax
+                db_url = str(db.engine.url)
+                is_postgres = 'postgres' in db_url.lower()
+                datetime_type = 'TIMESTAMP' if is_postgres else 'DATETIME'
+                
                 with db.engine.connect() as conn:
                     if 'first_name' not in columns:
                         print("Adding first_name column to users table...")
@@ -167,7 +172,10 @@ def initialize_database():
                     
                     if 'email_verified' not in columns:
                         print("Adding email_verified column to users table...")
-                        conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 0"))
+                        if is_postgres:
+                            conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE"))
+                        else:
+                            conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 0"))
                         conn.commit()
                         print("✓ Added email_verified column")
                     
@@ -179,13 +187,16 @@ def initialize_database():
                     
                     if 'verification_token_expires' not in columns:
                         print("Adding verification_token_expires column to users table...")
-                        conn.execute(text("ALTER TABLE users ADD COLUMN verification_token_expires DATETIME"))
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN verification_token_expires {datetime_type}"))
                         conn.commit()
                         print("✓ Added verification_token_expires column")
                     
                     if 'updated_at' not in columns:
                         print("Adding updated_at column to users table...")
-                        conn.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+                        if is_postgres:
+                            conn.execute(text("ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+                        else:
+                            conn.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
                         conn.commit()
                         print("✓ Added updated_at column")
                     
@@ -200,7 +211,7 @@ def initialize_database():
                     
                     if 'reset_token_expires' not in columns:
                         print("Adding reset_token_expires column to users table...")
-                        conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires DATETIME"))
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN reset_token_expires {datetime_type}"))
                         conn.commit()
                         print("✓ Added reset_token_expires column")
             
