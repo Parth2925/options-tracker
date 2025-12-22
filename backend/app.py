@@ -59,8 +59,9 @@ CORS(app,
      resources={r"/api/*": {
          "origins": allowed_origins,
          "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-         "supports_credentials": True
+         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+         "supports_credentials": True,
+         "expose_headers": ["Content-Type", "Authorization"]
      }}
 )
 
@@ -69,6 +70,17 @@ print(f"CORS Configuration:")
 print(f"  Allowed origins: {allowed_origins}")
 print(f"  Frontend URL from env: {frontend_url}")
 print(f"  Flask ENV: {os.getenv('FLASK_ENV', 'not set')}")
+
+# Add request logging middleware to see ALL requests
+@app.before_request
+def log_request_info():
+    print(f"\n{'='*60}")
+    print(f"REQUEST: {request.method} {request.path}")
+    print(f"Origin: {request.headers.get('Origin', 'Not set')}")
+    print(f"Headers: {dict(request.headers)}")
+    if request.method == 'POST' and request.is_json:
+        print(f"JSON Data: {request.get_json()}")
+    print(f"{'='*60}\n")
 
 # Register blueprints
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
