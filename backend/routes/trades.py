@@ -294,6 +294,9 @@ def create_trade():
                     if parent.trade_type == 'CSP':
                         parent.status = 'Assigned'
                         parent.assignment_price = trade.assignment_price or parent.strike_price
+                        # Set parent's close_date to assignment date (expiration date)
+                        # This is critical for Days Held and Return % calculations
+                        parent.close_date = trade.trade_date
                         # Set parent's open_date if not set
                         if not parent.open_date:
                             parent.open_date = parent.trade_date
