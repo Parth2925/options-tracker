@@ -573,8 +573,17 @@ function Trades() {
                       </td>
                     </tr>
                   ) : (
-                    filteredAndSortedTrades.map((trade) => (
-                    <tr key={trade.id}>
+                    filteredAndSortedTrades.map((trade) => {
+                      // Determine if trade is closed/assigned for visual styling
+                      const isClosed = trade.status === 'Closed' || trade.status === 'Assigned' || trade.status === 'Expired';
+                      return (
+                    <tr 
+                      key={trade.id}
+                      style={isClosed ? {
+                        backgroundColor: 'var(--bg-tertiary)',
+                        opacity: 0.7
+                      } : {}}
+                    >
                       <td>{trade.trade_date ? (() => {
                         // Parse date as local date to avoid timezone issues
                         const [year, month, day] = trade.trade_date.split('T')[0].split('-');

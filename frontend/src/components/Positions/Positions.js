@@ -245,8 +245,16 @@ function Positions() {
                   ) : (
                   displayTrades.map((trade) => {
                     const netPremium = (trade.premium || 0) - (trade.fees || 0);
+                    // Determine if trade is closed/assigned for visual styling
+                    const isClosed = trade.status === 'Closed' || trade.status === 'Assigned' || trade.status === 'Expired';
                     return (
-                      <tr key={trade.id}>
+                      <tr 
+                        key={trade.id}
+                        style={isClosed ? {
+                          backgroundColor: 'var(--bg-tertiary)',
+                          opacity: 0.7
+                        } : {}}
+                      >
                         <td>{trade.trade_date ? (() => {
                           const [year, month, day] = trade.trade_date.split('T')[0].split('-');
                           return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
