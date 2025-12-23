@@ -178,7 +178,10 @@ function Accounts() {
                     <tbody>
                       {deposits.map((deposit) => (
                         <tr key={deposit.id}>
-                          <td>{new Date(deposit.deposit_date).toLocaleDateString()}</td>
+                          <td>{deposit.deposit_date ? (() => {
+                            const [year, month, day] = deposit.deposit_date.split('T')[0].split('-');
+                            return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                          })() : '-'}</td>
                           <td>${parseFloat(deposit.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td>{deposit.notes || '-'}</td>
                         </tr>

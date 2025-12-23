@@ -247,11 +247,17 @@ function Positions() {
                     const netPremium = (trade.premium || 0) - (trade.fees || 0);
                     return (
                       <tr key={trade.id}>
-                        <td>{new Date(trade.trade_date).toLocaleDateString()}</td>
+                        <td>{trade.trade_date ? (() => {
+                          const [year, month, day] = trade.trade_date.split('T')[0].split('-');
+                          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                        })() : '-'}</td>
                         <td>{trade.symbol}</td>
                         <td>{trade.trade_type}</td>
                         <td>{trade.strike_price ? `$${trade.strike_price}` : '-'}</td>
-                        <td>{trade.expiration_date ? new Date(trade.expiration_date).toLocaleDateString() : '-'}</td>
+                        <td>{trade.expiration_date ? (() => {
+                          const [year, month, day] = trade.expiration_date.split('T')[0].split('-');
+                          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                        })() : '-'}</td>
                         <td>{trade.contract_quantity}</td>
                         <td>${trade.premium?.toFixed(2) || '0.00'}</td>
                         <td>${trade.fees?.toFixed(2) || '0.00'}</td>
