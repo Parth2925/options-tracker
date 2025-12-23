@@ -78,6 +78,15 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
   
   const availableParentTrades = getAvailableParentTrades();
 
+  // Helper function to parse date string without timezone issues
+  const parseDateString = (dateStr) => {
+    if (!dateStr) return '';
+    // If date string is in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss), extract just the date part
+    const dateOnly = dateStr.split('T')[0];
+    // Return as-is (YYYY-MM-DD format) - no timezone conversion needed
+    return dateOnly;
+  };
+
   // Load trade data if editing
   useEffect(() => {
     if (trade) {
@@ -87,14 +96,14 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
         trade_type: trade.trade_type,
         position_type: trade.position_type,
         strike_price: trade.strike_price || '',
-        expiration_date: trade.expiration_date ? trade.expiration_date.split('T')[0] : '',
+        expiration_date: parseDateString(trade.expiration_date),
         contract_quantity: trade.contract_quantity || 1,
         trade_price: trade.trade_price || '',
         trade_action: trade.trade_action || 'Sold to Open',
         fees: trade.fees || '',
         assignment_price: trade.assignment_price || '',
-        trade_date: trade.trade_date ? trade.trade_date.split('T')[0] : new Date().toISOString().split('T')[0],
-        close_date: trade.close_date ? trade.close_date.split('T')[0] : '',
+        trade_date: parseDateString(trade.trade_date) || new Date().toISOString().split('T')[0],
+        close_date: parseDateString(trade.close_date),
         status: trade.status || 'Open',
         parent_trade_id: trade.parent_trade_id || '',
         notes: trade.notes || '',
@@ -210,7 +219,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
           const updates = {
             ...prev,
             strike_price: selectedParent.strike_price || prev.strike_price,
-            expiration_date: selectedParent.expiration_date ? selectedParent.expiration_date.split('T')[0] : prev.expiration_date,
+            expiration_date: selectedParent.expiration_date ? parseDateString(selectedParent.expiration_date) : prev.expiration_date,
             symbol: selectedParent.symbol || prev.symbol, // Also match symbol
             contract_quantity: Math.min(prev.contract_quantity || 1, remainingQty), // Don't exceed remaining
           };
@@ -383,7 +392,10 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
                     return (
                       <option key={parentTrade.id} value={parentTrade.id}>
                         {parentTrade.trade_type} - {parentTrade.symbol} @ ${parentTrade.strike_price || 'N/A'} 
-                        ({parentTrade.status}) - {remainingQty} contracts open - {new Date(parentTrade.trade_date).toLocaleDateString()}
+                        ({parentTrade.status}) - {remainingQty} contracts open - {parentTrade.trade_date ? (() => {
+                          const [year, month, day] = parentTrade.trade_date.split('T')[0].split('-');
+                          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                        })() : '-'}
                       </option>
                     );
                   })
@@ -549,7 +561,10 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
                 <div style={{ marginBottom: '10px' }}>
                   <strong>Opening Premium:</strong> ${(parentTrade.premium || 0).toFixed(2)} ({parentTrade.contract_quantity || 1} contracts)
                   <small style={{ display: 'block', color: '#666', fontSize: '12px', marginTop: '3px' }}>
-                    From trade on {new Date(parentTrade.trade_date).toLocaleDateString()}
+                    From trade on {parentTrade.trade_date ? (() => {
+                      const [year, month, day] = parentTrade.trade_date.split('T')[0].split('-');
+                      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                    })() : '-'}
                     {formData.contract_quantity && parseInt(formData.contract_quantity) < (parentTrade.contract_quantity || 1) && (
                       <span style={{ display: 'block', marginTop: '3px' }}>
                         Proportional premium for {formData.contract_quantity} contracts: ${((parentTrade.premium || 0) / (parentTrade.contract_quantity || 1) * parseInt(formData.contract_quantity)).toFixed(2)}

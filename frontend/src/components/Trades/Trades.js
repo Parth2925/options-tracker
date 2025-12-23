@@ -575,12 +575,20 @@ function Trades() {
                   ) : (
                     filteredAndSortedTrades.map((trade) => (
                     <tr key={trade.id}>
-                      <td>{new Date(trade.trade_date).toLocaleDateString()}</td>
+                      <td>{trade.trade_date ? (() => {
+                        // Parse date as local date to avoid timezone issues
+                        const [year, month, day] = trade.trade_date.split('T')[0].split('-');
+                        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                      })() : '-'}</td>
                       <td>{trade.symbol}</td>
                       <td>{trade.trade_type}</td>
                       <td>{trade.trade_action || '-'}</td>
                       <td>{trade.strike_price ? `$${trade.strike_price}` : '-'}</td>
-                      <td>{trade.expiration_date ? new Date(trade.expiration_date).toLocaleDateString() : '-'}</td>
+                      <td>{trade.expiration_date ? (() => {
+                        // Parse date as local date to avoid timezone issues
+                        const [year, month, day] = trade.expiration_date.split('T')[0].split('-');
+                        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                      })() : '-'}</td>
                       <td>${trade.premium?.toFixed(2) || '0.00'}</td>
                       <td style={{ 
                         color: trade.realized_pnl >= 0 ? '#28a745' : '#dc3545',
