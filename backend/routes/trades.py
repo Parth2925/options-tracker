@@ -541,8 +541,104 @@ def import_trades():
     try:
         trades = parse_trade_file(file, account_id)
         
-        # Bulk insert trades
+        # IMPORTANT: parent_trade_id in the file refers to old database IDs
+        # We need to import in order and create a mapping from old IDs to new IDs
+        # Strategy: Import in two passes
+        # 1. First pass: Import all trades without parent relationships, store old_id -> new_id mapping
+        # 2. Second pass: Update parent_trade_id references using the mapping
+        
+        # Store original parent_trade_id from file (before we lose it)
+        old_parent_ids = {}
+        for idx, trade in enumerate(trades):
+            old_parent_ids[idx] = trade.parent_trade_id
+        
+        # Post-process trades to ensure data integrity
+        # Note: parent_trade_id will be cleared temporarily and restored after import
+        for idx, trade in enumerate(trades):
+            # Clear parent_trade_id temporarily (we'll set it after all trades are imported)
+            trade.parent_trade_id = None
+            
+            # Only recalculate premium if it's missing or zero AND trade_price/trade_action are provided
+            # This preserves the original premium value from export
+            if trade.trade_type != 'Assignment':
+                if (not trade.premium or trade.premium == 0) and trade.trade_price and trade.trade_action:
+                    # Recalculate premium only if premium is missing/zero
+                    trade.premium = calculate_premium(trade.trade_price, trade.trade_action, trade.contract_quantity, trade.fees)
+        
+        # Bulk insert trades (without parent relationships first)
         db.session.add_all(trades)
+        db.session.flush()  # Get new IDs without committing
+        
+        # Build mapping: row_index -> new_trade_id
+        id_mapping = {}
+        for idx, trade in enumerate(trades):
+            id_mapping[idx] = trade.id
+        
+        # Now match parent trades and update parent_trade_id
+        # Since exported parent_trade_id refers to old DB IDs, we need to match by characteristics
+        # Strategy: Match parent by symbol, trade_type, strike_price
+        # For closing trades, parent date should be <= child date (opening happens before/on closing date)
+        for idx, trade in enumerate(trades):
+            original_parent_id = old_parent_ids.get(idx)
+            
+            if original_parent_id is not None:
+                # Find the parent trade by matching characteristics
+                parent_trade = None
+                for parent_idx, potential_parent in enumerate(trades):
+                    if parent_idx == idx:
+                        continue  # Skip self
+                    
+                    # Match by key characteristics: symbol, trade_type, strike_price
+                    # For closing trades, we DON'T match on exact trade_date because closing date is different from opening date
+                    # Parent should be an opening trade (Sold to Open or Bought to Open)
+                    # Parent's trade_date should be BEFORE or EQUAL to child's trade_date (closing can't happen before opening)
+                    symbol_match = potential_parent.symbol == trade.symbol
+                    type_match = potential_parent.trade_type == trade.trade_type
+                    strike_match = potential_parent.strike_price == trade.strike_price
+                    is_opening = potential_parent.trade_action in ['Sold to Open', 'Bought to Open']
+                    # For closing trades, parent date should be <= child date (opening happens before/on closing date)
+                    # For assignment trades, we can be more flexible
+                    if trade.trade_action in ['Bought to Close', 'Sold to Close']:
+                        date_valid = potential_parent.trade_date <= trade.trade_date
+                    else:
+                        # For other trade types (like Assignment), match on exact date
+                        date_valid = potential_parent.trade_date == trade.trade_date
+                    
+                    if (symbol_match and type_match and strike_match and date_valid and is_opening):
+                        # This looks like the parent
+                        parent_trade = potential_parent
+                        break
+                
+                if parent_trade:
+                    trade.parent_trade_id = parent_trade.id
+                    # Mark as modified to ensure SQLAlchemy tracks the change
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(trade, 'parent_trade_id')
+        
+        # Now update open_date and other parent-dependent fields AFTER parent relationships are set
+        for trade in trades:
+            # For closing trades, ensure open_date is set from parent if not provided
+            if trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+                parent = Trade.query.get(trade.parent_trade_id)
+                if parent and not trade.open_date:
+                    trade.open_date = parent.trade_date
+                # Ensure close_date is set if not provided
+                if not trade.close_date:
+                    trade.close_date = trade.trade_date
+            
+            # For Assignment trades, ensure status is 'Assigned'
+            if trade.trade_type == 'Assignment':
+                trade.status = 'Assigned'
+                # Set parent's close_date if parent is a CSP
+                if trade.parent_trade_id:
+                    parent = Trade.query.get(trade.parent_trade_id)
+                    if parent and parent.trade_type == 'CSP':
+                        parent.status = 'Assigned'
+                        parent.close_date = trade.trade_date
+                        if not parent.open_date:
+                            parent.open_date = parent.trade_date
+        
+        # Commit all changes
         db.session.commit()
         
         return jsonify({
@@ -683,6 +779,17 @@ def export_template():
             '2025-10-01',    # LEAPS opened
             '2025-12-20',    # LEAPS closed
             '2025-12-01'     # CSP opened
+        ],
+        'open_date': [
+            None,            # Open trade - open_date will be set to trade_date automatically
+            '2025-11-20',    # Closing trade - open_date from parent CSP trade_date
+            None,            # Open CSP - open_date will be set to trade_date automatically
+            None,            # Assignment - open_date not needed
+            None,            # Open covered call - open_date will be set to trade_date automatically
+            '2025-11-25',    # Closing trade - open_date from parent covered call trade_date
+            None,            # Open LEAPS - open_date will be set to trade_date automatically
+            '2025-10-01',    # Closing trade - open_date from parent LEAPS trade_date
+            None             # Open CSP - open_date will be set to trade_date automatically
         ],
         'close_date': [
             None,            # Still open
@@ -853,7 +960,7 @@ def export_trades():
     if not trades:
         return jsonify({'error': 'No trades found to export'}), 404
     
-    # Prepare data for export
+    # Prepare data for export - include ALL fields needed for calculations
     export_data = {
         'account_id': [],
         'symbol': [],
@@ -867,6 +974,7 @@ def export_trades():
         'premium': [],
         'fees': [],
         'trade_date': [],
+        'open_date': [],  # Critical for days_held and return % calculations
         'close_date': [],
         'status': [],
         'parent_trade_id': [],
@@ -887,6 +995,7 @@ def export_trades():
         export_data['premium'].append(trade.premium)
         export_data['fees'].append(trade.fees)
         export_data['trade_date'].append(trade.trade_date.strftime('%Y-%m-%d') if trade.trade_date else None)
+        export_data['open_date'].append(trade.open_date.strftime('%Y-%m-%d') if trade.open_date else None)
         export_data['close_date'].append(trade.close_date.strftime('%Y-%m-%d') if trade.close_date else None)
         export_data['status'].append(trade.status)
         export_data['parent_trade_id'].append(trade.parent_trade_id if trade.parent_trade_id else None)
