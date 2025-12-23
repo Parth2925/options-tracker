@@ -2,9 +2,18 @@ import React, { useState } from 'react';
 import api from '../../utils/api';
 
 function DepositForm({ accountId, onSuccess, onCancel }) {
+  // Helper function to get today's date in local timezone (YYYY-MM-DD format)
+  const getTodayLocalDate = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const [formData, setFormData] = useState({
     amount: '',
-    deposit_date: new Date().toISOString().split('T')[0],
+    deposit_date: getTodayLocalDate(),
     notes: '',
   });
   const [error, setError] = useState('');

@@ -3,6 +3,15 @@ import api from '../../utils/api';
 import './Trades.css';
 
 function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
+  // Helper function to get today's date in local timezone (YYYY-MM-DD format)
+  const getTodayLocalDate = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const [formData, setFormData] = useState({
     account_id: accounts.length > 0 ? accounts[0].id : '',
     symbol: '',
@@ -15,7 +24,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
     trade_action: 'Sold to Open',
     fees: '',
     assignment_price: '',
-    trade_date: new Date().toISOString().split('T')[0],
+    trade_date: getTodayLocalDate(),
     close_date: '',
     status: 'Open',
     parent_trade_id: '',
@@ -102,7 +111,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
         trade_action: trade.trade_action || 'Sold to Open',
         fees: trade.fees || '',
         assignment_price: trade.assignment_price || '',
-        trade_date: parseDateString(trade.trade_date) || new Date().toISOString().split('T')[0],
+        trade_date: parseDateString(trade.trade_date) || getTodayLocalDate(),
         close_date: parseDateString(trade.close_date),
         status: trade.status || 'Open',
         parent_trade_id: trade.parent_trade_id || '',
@@ -267,6 +276,27 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
     setLoading(true);
 
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/95459f9a-bd1e-4d01-882a-a1b0acc3f204', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location: 'TradeForm.js:handleSubmit',
+          message: 'Before creating payload',
+          data: {
+            trade_date: formData.trade_date,
+            expiration_date: formData.expiration_date,
+            close_date: formData.close_date,
+            formData_trade_date_type: typeof formData.trade_date
+          },
+          timestamp: Date.now(),
+          sessionId: 'debug-session',
+          runId: 'run1',
+          hypothesisId: 'A'
+        })
+      }).catch(() => {});
+      // #endregion
+
       const payload = {
         ...formData,
         account_id: parseInt(formData.account_id),
@@ -285,13 +315,56 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
         status: formData.trade_type === 'Assignment' ? 'Assigned' : formData.status,
       };
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/95459f9a-bd1e-4d01-882a-a1b0acc3f204', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location: 'TradeForm.js:handleSubmit',
+          message: 'Payload created, about to send',
+          data: {
+            trade_date: payload.trade_date,
+            expiration_date: payload.expiration_date,
+            close_date: payload.close_date
+          },
+          timestamp: Date.now(),
+          sessionId: 'debug-session',
+          runId: 'run1',
+          hypothesisId: 'B'
+        })
+      }).catch(() => {});
+      // #endregion
+
+      let response;
       if (trade) {
         // Update existing trade
-        await api.put(`/trades/${trade.id}`, payload);
+        response = await api.put(`/trades/${trade.id}`, payload);
       } else {
         // Create new trade
-        await api.post('/trades', payload);
+        response = await api.post('/trades', payload);
       }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/95459f9a-bd1e-4d01-882a-a1b0acc3f204', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location: 'TradeForm.js:handleSubmit',
+          message: 'After API call, response received',
+          data: {
+            response_trade_date: response?.data?.trade_date,
+            response_expiration_date: response?.data?.expiration_date,
+            response_close_date: response?.data?.close_date,
+            sent_trade_date: payload.trade_date
+          },
+          timestamp: Date.now(),
+          sessionId: 'debug-session',
+          runId: 'run1',
+          hypothesisId: 'C'
+        })
+      }).catch(() => {});
+      // #endregion
+
       onSuccess();
     } catch (err) {
       setError(err.response?.data?.error || `Failed to ${trade ? 'update' : 'create'} trade`);

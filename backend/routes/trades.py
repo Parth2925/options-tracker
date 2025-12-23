@@ -108,6 +108,28 @@ def create_trade():
     user_id = get_user_id()
     data = request.get_json()
     
+    # #region agent log
+    import json
+    import time
+    try:
+        with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                'timestamp': time.time(),
+                'location': 'trades.py:create_trade',
+                'message': 'Received trade creation request',
+                'data': {
+                    'trade_date_received': data.get('trade_date') if data else None,
+                    'expiration_date_received': data.get('expiration_date') if data else None,
+                    'close_date_received': data.get('close_date') if data else None
+                },
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+                'hypothesisId': 'D'
+            }) + '\n')
+    except:
+        pass
+    # #endregion
+    
     if not data or not data.get('account_id') or not data.get('symbol') or not data.get('trade_type'):
         return jsonify({'error': 'account_id, symbol, and trade_type are required'}), 400
     
@@ -147,6 +169,27 @@ def create_trade():
     
     trade_date = datetime.strptime(data['trade_date'], '%Y-%m-%d').date() if data.get('trade_date') else datetime.now().date()
     close_date = datetime.strptime(data['close_date'], '%Y-%m-%d').date() if data.get('close_date') else None
+    
+    # #region agent log
+    try:
+        with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                'timestamp': time.time(),
+                'location': 'trades.py:create_trade',
+                'message': 'After parsing dates',
+                'data': {
+                    'trade_date_parsed': str(trade_date),
+                    'trade_date_isoformat': trade_date.isoformat() if trade_date else None,
+                    'close_date_parsed': str(close_date) if close_date else None,
+                    'close_date_isoformat': close_date.isoformat() if close_date else None
+                },
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+                'hypothesisId': 'E'
+            }) + '\n')
+    except:
+        pass
+    # #endregion
     
     # Determine open_date: if this is a closing trade, use parent's trade_date
     open_date = None
@@ -307,7 +350,31 @@ def create_trade():
         # Now commit all changes (trade and parent updates)
         db.session.commit()
         
-        return jsonify(trade.to_dict(include_realized_pnl=True)), 201
+        trade_dict = trade.to_dict(include_realized_pnl=True)
+        
+        # #region agent log
+        try:
+            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    'timestamp': time.time(),
+                    'location': 'trades.py:create_trade',
+                    'message': 'Before returning response',
+                    'data': {
+                        'trade_date_in_dict': trade_dict.get('trade_date'),
+                        'trade_date_actual': str(trade.trade_date),
+                        'trade_date_isoformat': trade.trade_date.isoformat() if trade.trade_date else None,
+                        'expiration_date_in_dict': trade_dict.get('expiration_date'),
+                        'close_date_in_dict': trade_dict.get('close_date')
+                    },
+                    'sessionId': 'debug-session',
+                    'runId': 'run1',
+                    'hypothesisId': 'F'
+                }) + '\n')
+        except:
+            pass
+        # #endregion
+        
+        return jsonify(trade_dict), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
