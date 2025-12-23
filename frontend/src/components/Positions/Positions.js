@@ -251,8 +251,9 @@ function Positions() {
                       <tr 
                         key={trade.id}
                         style={isClosed ? {
-                          backgroundColor: 'var(--bg-tertiary)',
-                          opacity: 0.7
+                          backgroundColor: 'rgba(108, 117, 125, 0.15)',
+                          borderLeft: '4px solid #6c757d',
+                          fontWeight: 'normal'
                         } : {}}
                       >
                         <td>{trade.trade_date ? (() => {
