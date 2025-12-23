@@ -649,8 +649,9 @@ function Trades() {
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
+                    );
+                    })
+                  )}
               </tbody>
             </table>
             </div>
