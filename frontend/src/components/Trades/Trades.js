@@ -27,16 +27,6 @@ function Trades() {
   // Sorting state
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
-  useEffect(() => {
-    loadAccounts();
-  }, []);
-
-  useEffect(() => {
-    if (accounts.length > 0) {
-      loadTrades();
-    }
-  }, [selectedAccount, accounts, loadTrades]);
-
   const loadAccounts = async () => {
     try {
       const response = await api.get('/accounts');
@@ -62,6 +52,16 @@ function Trades() {
       setLoading(false);
     }
   }, [selectedAccount]);
+
+  useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  useEffect(() => {
+    if (accounts.length > 0) {
+      loadTrades();
+    }
+  }, [selectedAccount, accounts, loadTrades]);
 
   const handleTradeCreated = () => {
     setShowForm(false);
