@@ -4,6 +4,7 @@ import Navbar from '../Layout/Navbar';
 import api, { API_BASE_URL } from '../../utils/api';
 import TradeForm from './TradeForm';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import './Trades.css';
 
 function Trades() {
@@ -580,9 +581,8 @@ function Trades() {
                     <tr 
                       key={trade.id}
                       style={isClosed ? {
-                        backgroundColor: 'rgba(108, 117, 125, 0.15)',
-                        borderLeft: '4px solid #6c757d',
-                        fontWeight: 'normal'
+                        backgroundColor: isDarkMode ? '#3a3a3a' : '#e9ecef',
+                        borderLeft: '4px solid #6c757d'
                       } : {}}
                     >
                       <td>{trade.trade_date ? (() => {

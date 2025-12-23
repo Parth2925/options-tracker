@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '../Layout/Navbar';
 import api from '../../utils/api';
+import { useTheme } from '../../contexts/ThemeContext';
 import './Positions.css';
 
 function Positions() {
@@ -251,9 +252,8 @@ function Positions() {
                       <tr 
                         key={trade.id}
                         style={isClosed ? {
-                          backgroundColor: 'rgba(108, 117, 125, 0.15)',
-                          borderLeft: '4px solid #6c757d',
-                          fontWeight: 'normal'
+                          backgroundColor: isDarkMode ? '#3a3a3a' : '#e9ecef',
+                          borderLeft: '4px solid #6c757d'
                         } : {}}
                       >
                         <td>{trade.trade_date ? (() => {
