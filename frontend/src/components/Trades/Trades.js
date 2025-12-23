@@ -35,7 +35,7 @@ function Trades() {
     if (accounts.length > 0) {
       loadTrades();
     }
-  }, [selectedAccount, accounts]);
+  }, [selectedAccount, accounts, loadTrades]);
 
   const loadAccounts = async () => {
     try {
@@ -46,7 +46,7 @@ function Trades() {
     }
   };
 
-  const loadTrades = async () => {
+  const loadTrades = useCallback(async () => {
     setLoading(true);
     try {
       const params = {};
@@ -61,7 +61,7 @@ function Trades() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedAccount]);
 
   const handleTradeCreated = () => {
     setShowForm(false);
