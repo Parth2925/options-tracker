@@ -9,6 +9,7 @@ import './Trades.css';
 
 function Trades() {
   const { showToast } = useToast();
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   const [trades, setTrades] = useState([]);
   const [accounts, setAccounts] = useState([]);

@@ -5,6 +5,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import './Positions.css';
 
 function Positions() {
+  const { isDarkMode } = useTheme();
   const [positions, setPositions] = useState({ open: [], closed: [] });
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('all');
