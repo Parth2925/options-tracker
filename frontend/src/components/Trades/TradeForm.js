@@ -35,6 +35,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
   const [parentTrade, setParentTrade] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   
   // Filter available parent trades based on trade type and action
   const getAvailableParentTrades = () => {
@@ -172,6 +173,15 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
   const handleChange = (e) => {
     const { name, value } = e.target;
     
+    // Clear field error when user starts typing
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
+    
     // Auto-set position_type based on trade_action
     let updatedData = { [name]: value };
     if (name === 'trade_action') {
@@ -270,9 +280,137 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
     }
   };
 
+  // Validation function
+  const validateForm = () => {
+    const errors = {};
+    
+    // Account is always required
+    if (!formData.account_id) {
+      errors.account_id = 'Please select an account';
+    }
+    
+    // Symbol is always required
+    if (!formData.symbol || formData.symbol.trim() === '') {
+      errors.symbol = 'Symbol is required (e.g., AAPL, MSFT)';
+    }
+    
+    // Trade type is always required
+    if (!formData.trade_type) {
+      errors.trade_type = 'Please select a trade type';
+    }
+    
+    // Trade action is required for non-Assignment trades
+    if (formData.trade_type !== 'Assignment' && !formData.trade_action) {
+      errors.trade_action = 'Please select a trade action';
+    }
+    
+    // Trade price is required for non-Assignment trades
+    if (formData.trade_type !== 'Assignment') {
+      if (!formData.trade_price || formData.trade_price === '') {
+        errors.trade_price = 'Trade price is required (price per contract)';
+      } else if (parseFloat(formData.trade_price) <= 0) {
+        errors.trade_price = 'Trade price must be greater than 0';
+      }
+    }
+    
+    // Assignment price is required for Assignment trades
+    if (formData.trade_type === 'Assignment') {
+      if (!formData.assignment_price || formData.assignment_price === '') {
+        errors.assignment_price = 'Assignment price is required (usually the strike price)';
+      } else if (parseFloat(formData.assignment_price) <= 0) {
+        errors.assignment_price = 'Assignment price must be greater than 0';
+      }
+    }
+    
+    // Trade date is always required
+    if (!formData.trade_date) {
+      errors.trade_date = 'Trade date is required';
+    }
+    
+    // Contract quantity validation
+    if (!formData.contract_quantity || parseInt(formData.contract_quantity) < 1) {
+      errors.contract_quantity = 'Contract quantity must be at least 1';
+    }
+    
+    // Parent trade validation for closing trades
+    if (formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close') {
+      if (!formData.parent_trade_id) {
+        errors.parent_trade_id = 'Please select the opening trade you are closing';
+      } else if (parentTrade) {
+        const remainingQty = parentTrade.remaining_open_quantity !== undefined 
+          ? parentTrade.remaining_open_quantity 
+          : (parentTrade.contract_quantity || 0);
+        const closingQty = parseInt(formData.contract_quantity) || 0;
+        
+        if (closingQty > remainingQty) {
+          errors.contract_quantity = `Cannot close ${closingQty} contracts. Only ${remainingQty} contracts remaining open.`;
+        }
+      }
+    }
+    
+    // Parent trade validation for Assignment trades
+    if (formData.trade_type === 'Assignment') {
+      if (!formData.parent_trade_id) {
+        errors.parent_trade_id = 'Please select the CSP that was assigned';
+      }
+    }
+    
+    // Parent trade validation for Covered Call trades
+    if (formData.trade_type === 'Covered Call' && !formData.parent_trade_id) {
+      errors.parent_trade_id = 'Please select the assignment (stock position) to sell calls on';
+    }
+    
+    // Fees validation (if provided, must be non-negative)
+    if (formData.fees && parseFloat(formData.fees) < 0) {
+      errors.fees = 'Fees cannot be negative';
+    }
+    
+    // Strike price validation (if provided, must be positive)
+    if (formData.strike_price && parseFloat(formData.strike_price) <= 0) {
+      errors.strike_price = 'Strike price must be greater than 0';
+    }
+    
+    // Date validation: close_date should not be before trade_date
+    if (formData.close_date && formData.trade_date) {
+      const tradeDate = new Date(formData.trade_date);
+      const closeDate = new Date(formData.close_date);
+      if (closeDate < tradeDate) {
+        errors.close_date = 'Close date cannot be before trade date';
+      }
+    }
+    
+    // Expiration date validation: should not be before trade_date
+    if (formData.expiration_date && formData.trade_date) {
+      const tradeDate = new Date(formData.trade_date);
+      const expDate = new Date(formData.expiration_date);
+      if (expDate < tradeDate) {
+        errors.expiration_date = 'Expiration date cannot be before trade date';
+      }
+    }
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
+    
+    // Validate form before submitting
+    if (!validateForm()) {
+      // Scroll to first error
+      const firstErrorField = Object.keys(fieldErrors)[0];
+      if (firstErrorField) {
+        const element = document.querySelector(`[name="${firstErrorField}"]`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.focus();
+        }
+      }
+      return;
+    }
+    
     setLoading(true);
 
     try {
@@ -342,7 +480,11 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               onChange={handleChange}
               required
               placeholder="AAPL"
+              className={fieldErrors.symbol ? 'error-field' : ''}
             />
+            {fieldErrors.symbol && (
+              <div className="field-error">{fieldErrors.symbol}</div>
+            )}
           </div>
 
           <div className="form-group">
@@ -352,6 +494,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               value={formData.trade_type}
               onChange={handleChange}
               required
+              className={fieldErrors.trade_type ? 'error-field' : ''}
             >
               <option value="CSP">Cash-Secured Put (CSP)</option>
               <option value="Covered Call">Covered Call</option>
@@ -359,6 +502,9 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               <option value="Assignment">Assignment</option>
               <option value="Rollover">Rollover</option>
             </select>
+            {fieldErrors.trade_type && (
+              <div className="field-error">{fieldErrors.trade_type}</div>
+            )}
           </div>
 
           {formData.trade_type !== 'Assignment' && (
@@ -369,12 +515,16 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
                 value={formData.trade_action}
                 onChange={handleChange}
                 required
+                className={fieldErrors.trade_action ? 'error-field' : ''}
               >
                 <option value="Sold to Open">Sold to Open</option>
                 <option value="Bought to Close">Bought to Close</option>
                 <option value="Bought to Open">Bought to Open</option>
                 <option value="Sold to Close">Sold to Close</option>
               </select>
+              {fieldErrors.trade_action && (
+                <div className="field-error">{fieldErrors.trade_action}</div>
+              )}
             </div>
           )}
 
@@ -388,7 +538,8 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
                 name="parent_trade_id"
                 value={formData.parent_trade_id}
                 onChange={handleChange}
-                required={formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close'}
+                required={formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close' || formData.trade_type === 'Assignment' || formData.trade_type === 'Covered Call'}
+                className={fieldErrors.parent_trade_id ? 'error-field' : ''}
               >
                 <option value="">Select Parent Trade</option>
                 {availableParentTrades.length === 0 ? (
@@ -412,6 +563,9 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
                   })
                 )}
               </select>
+              {fieldErrors.parent_trade_id && (
+                <div className="field-error">{fieldErrors.parent_trade_id}</div>
+              )}
               <small style={{ color: '#666', fontSize: '12px' }}>
                 {formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close' 
                   ? 'Select the opening trade you are closing'
@@ -445,7 +599,11 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               value={formData.strike_price}
               onChange={handleChange}
               placeholder="150.00"
+              className={fieldErrors.strike_price ? 'error-field' : ''}
             />
+            {fieldErrors.strike_price && (
+              <div className="field-error">{fieldErrors.strike_price}</div>
+            )}
           </div>
 
           <div className="form-group">
@@ -455,7 +613,11 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               name="expiration_date"
               value={formData.expiration_date}
               onChange={handleChange}
+              className={fieldErrors.expiration_date ? 'error-field' : ''}
             />
+            {fieldErrors.expiration_date && (
+              <div className="field-error">{fieldErrors.expiration_date}</div>
+            )}
           </div>
 
           <div className="form-group">
@@ -469,8 +631,12 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               max={parentTrade && (formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close')
                 ? (parentTrade.remaining_open_quantity !== undefined ? parentTrade.remaining_open_quantity : parentTrade.contract_quantity)
                 : undefined}
+              className={fieldErrors.contract_quantity ? 'error-field' : ''}
             />
-            {parentTrade && (formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close') && (
+            {fieldErrors.contract_quantity && (
+              <div className="field-error">{fieldErrors.contract_quantity}</div>
+            )}
+            {parentTrade && (formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close') && !fieldErrors.contract_quantity && (
               <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
                 {parentTrade.remaining_open_quantity !== undefined 
                   ? `${parentTrade.remaining_open_quantity} contracts remaining open`
@@ -490,10 +656,16 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
                 onChange={handleChange}
                 required
                 placeholder="5.00"
+                className={fieldErrors.trade_price ? 'error-field' : ''}
               />
-              <small style={{ color: '#666', fontSize: '12px' }}>
-                Price per contract (e.g., $5.00)
-              </small>
+              {fieldErrors.trade_price && (
+                <div className="field-error">{fieldErrors.trade_price}</div>
+              )}
+              {!fieldErrors.trade_price && (
+                <small style={{ color: '#666', fontSize: '12px' }}>
+                  Price per contract (e.g., $5.00)
+                </small>
+              )}
             </div>
           )}
 
@@ -506,10 +678,16 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               value={formData.fees}
               onChange={handleChange}
               placeholder="0.50"
+              className={fieldErrors.fees ? 'error-field' : ''}
             />
-            <small style={{ color: '#666', fontSize: '12px' }}>
-              Fee per contract (e.g., $0.50)
-            </small>
+            {fieldErrors.fees && (
+              <div className="field-error">{fieldErrors.fees}</div>
+            )}
+            {!fieldErrors.fees && (
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Fee per contract (e.g., $0.50)
+              </small>
+            )}
           </div>
 
           {formData.trade_type !== 'Assignment' && (
@@ -614,8 +792,12 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               onChange={handleChange}
               required={formData.trade_type === 'Assignment'}
               placeholder={formData.trade_type === 'Assignment' ? "Price at which stock was assigned (usually the strike price)" : "For assignments only"}
+              className={fieldErrors.assignment_price ? 'error-field' : ''}
             />
-            {formData.trade_type === 'Assignment' && (
+            {fieldErrors.assignment_price && (
+              <div className="field-error">{fieldErrors.assignment_price}</div>
+            )}
+            {formData.trade_type === 'Assignment' && !fieldErrors.assignment_price && (
               <small style={{ color: '#666', fontSize: '12px' }}>
                 The price at which you were assigned the stock (typically the strike price of the CSP)
               </small>
@@ -630,10 +812,16 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               value={formData.trade_date}
               onChange={handleChange}
               required
+              className={fieldErrors.trade_date ? 'error-field' : ''}
             />
-            <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
-              Date when this trade was executed/entered
-            </small>
+            {fieldErrors.trade_date && (
+              <div className="field-error">{fieldErrors.trade_date}</div>
+            )}
+            {!fieldErrors.trade_date && (
+              <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                Date when this trade was executed/entered
+              </small>
+            )}
           </div>
 
           <div className="form-group">
@@ -643,10 +831,16 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
               name="close_date"
               value={formData.close_date}
               onChange={handleChange}
+              className={fieldErrors.close_date ? 'error-field' : ''}
             />
-            <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
-              Date when position was closed (used for return calculations). For closing trades, this is typically the same as Trade Date.
-            </small>
+            {fieldErrors.close_date && (
+              <div className="field-error">{fieldErrors.close_date}</div>
+            )}
+            {!fieldErrors.close_date && (
+              <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                Date when position was closed (used for return calculations). For closing trades, this is typically the same as Trade Date.
+              </small>
+            )}
           </div>
 
           <div className="form-group">

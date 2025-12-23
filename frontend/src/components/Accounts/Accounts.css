@@ -37,3 +37,32 @@
   font-size: 14px;
 }
 
+/* Form validation error styles */
+.error-field {
+  border: 2px solid #dc3545 !important;
+  background-color: #fff5f5 !important;
+}
+
+.error-field:focus {
+  border-color: #dc3545 !important;
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+}
+
+.field-error {
+  color: #dc3545;
+  font-size: 12px;
+  margin-top: 5px;
+  display: block;
+  font-weight: 500;
+}
+
+.dark-mode .error-field {
+  border-color: #ff6b6b !important;
+  background-color: #2d1f1f !important;
+}
+
+.dark-mode .field-error {
+  color: #ff6b6b;
+}
+

@@ -18,18 +18,64 @@ function DepositForm({ accountId, onSuccess, onCancel }) {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    
+    // Clear field error when user starts typing
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
+    
     setFormData((prev) => ({
       ...prev,
       [name]: value,
     }));
   };
+  
+  const validateForm = () => {
+    const errors = {};
+    
+    // Amount is required and must be positive
+    if (!formData.amount || formData.amount === '') {
+      errors.amount = 'Deposit amount is required';
+    } else if (isNaN(parseFloat(formData.amount)) || parseFloat(formData.amount) <= 0) {
+      errors.amount = 'Deposit amount must be a positive number';
+    }
+    
+    // Deposit date is required
+    if (!formData.deposit_date) {
+      errors.deposit_date = 'Deposit date is required';
+    }
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
+    
+    // Validate form before submitting
+    if (!validateForm()) {
+      // Scroll to first error
+      const firstErrorField = Object.keys(fieldErrors)[0];
+      if (firstErrorField) {
+        const element = document.querySelector(`[name="${firstErrorField}"]`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.focus();
+        }
+      }
+      return;
+    }
+    
     setLoading(true);
 
     try {
@@ -61,7 +107,11 @@ function DepositForm({ accountId, onSuccess, onCancel }) {
             onChange={handleChange}
             required
             placeholder="0.00"
+            className={fieldErrors.amount ? 'error-field' : ''}
           />
+          {fieldErrors.amount && (
+            <div className="field-error">{fieldErrors.amount}</div>
+          )}
         </div>
 
         <div className="form-group">
@@ -72,7 +122,11 @@ function DepositForm({ accountId, onSuccess, onCancel }) {
             value={formData.deposit_date}
             onChange={handleChange}
             required
+            className={fieldErrors.deposit_date ? 'error-field' : ''}
           />
+          {fieldErrors.deposit_date && (
+            <div className="field-error">{fieldErrors.deposit_date}</div>
+          )}
         </div>
 
         <div className="form-group">

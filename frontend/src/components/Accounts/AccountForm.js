@@ -9,18 +9,62 @@ function AccountForm({ onSuccess, onCancel }) {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    
+    // Clear field error when user starts typing
+    if (fieldErrors[name]) {
+      setFieldErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
+    
     setFormData((prev) => ({
       ...prev,
       [name]: value,
     }));
   };
+  
+  const validateForm = () => {
+    const errors = {};
+    
+    // Account name is required
+    if (!formData.name || formData.name.trim() === '') {
+      errors.name = 'Account name is required';
+    }
+    
+    // Initial balance validation (if provided, must be valid number)
+    if (formData.initial_balance && (isNaN(parseFloat(formData.initial_balance)) || parseFloat(formData.initial_balance) < 0)) {
+      errors.initial_balance = 'Initial balance must be a positive number or zero';
+    }
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setFieldErrors({});
+    
+    // Validate form before submitting
+    if (!validateForm()) {
+      // Scroll to first error
+      const firstErrorField = Object.keys(fieldErrors)[0];
+      if (firstErrorField) {
+        const element = document.querySelector(`[name="${firstErrorField}"]`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.focus();
+        }
+      }
+      return;
+    }
+    
     setLoading(true);
 
     try {
@@ -51,7 +95,11 @@ function AccountForm({ onSuccess, onCancel }) {
             onChange={handleChange}
             required
             placeholder="e.g., Main Trading Account"
+            className={fieldErrors.name ? 'error-field' : ''}
           />
+          {fieldErrors.name && (
+            <div className="field-error">{fieldErrors.name}</div>
+          )}
         </div>
 
         <div className="form-group">
@@ -78,7 +126,11 @@ function AccountForm({ onSuccess, onCancel }) {
             value={formData.initial_balance}
             onChange={handleChange}
             placeholder="0.00"
+            className={fieldErrors.initial_balance ? 'error-field' : ''}
           />
+          {fieldErrors.initial_balance && (
+            <div className="field-error">{fieldErrors.initial_balance}</div>
+          )}
         </div>
 
         {error && <div className="error">{error}</div>}
