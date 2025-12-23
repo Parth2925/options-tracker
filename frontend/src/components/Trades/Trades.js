@@ -582,8 +582,9 @@ function Trades() {
                     <tr 
                       key={trade.id}
                       style={isClosed ? {
-                        backgroundColor: isDarkMode ? '#3a3a3a' : '#e9ecef',
-                        borderLeft: '4px solid #6c757d'
+                        backgroundColor: isDarkMode ? '#2d2d2d' : '#d3d3d3',
+                        borderLeft: '6px solid #6c757d',
+                        opacity: 0.9
                       } : {}}
                     >
                       <td>{trade.trade_date ? (() => {
