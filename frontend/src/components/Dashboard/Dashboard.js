@@ -380,7 +380,7 @@ function Dashboard() {
         {openPositions && openPositions.positions && openPositions.positions.length > 0 && (
           <div className="card">
             <h2>Open Positions Allocation</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginTop: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '30px', marginTop: '20px' }}>
               {/* Pie Chart */}
               <div>
                 <h3 style={{ marginBottom: '20px', fontSize: '18px' }}>Portfolio Allocation by Symbol</h3>
@@ -434,7 +434,7 @@ function Dashboard() {
               {/* Positions Table */}
               <div>
                 <h3 style={{ marginBottom: '20px', fontSize: '18px' }}>Position Details</h3>
-                <div style={{ overflowX: 'auto' }}>
+                <div className="table-wrapper">
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                     <thead>
                       <tr style={{ 

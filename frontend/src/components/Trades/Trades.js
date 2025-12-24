@@ -199,9 +199,9 @@ function Trades() {
     <>
       <Navbar />
       <div className="container">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
           <h1>Trades</h1>
-          <div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <button 
               className="btn btn-secondary" 
               onClick={async () => {
@@ -419,7 +419,7 @@ function Trades() {
 
         {/* Search and Filter Controls */}
         <div className="card" style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Search</label>
               <input
@@ -481,7 +481,7 @@ function Trades() {
             <div style={{ marginBottom: '15px', color: 'var(--text-secondary)', fontSize: '14px' }}>
               Showing {filteredAndSortedTrades.length} of {trades.length} trades
             </div>
-            <div style={{ overflowX: 'auto' }}>
+            <div className="table-wrapper">
               <table>
                 <thead>
                   <tr>

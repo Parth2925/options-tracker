@@ -91,7 +91,7 @@ function Accounts() {
     <>
       <Navbar />
       <div className="container">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
           <h1>Accounts</h1>
           <button className="btn btn-primary" onClick={() => setShowAccountForm(!showAccountForm)}>
             {showAccountForm ? 'Cancel' : 'Add Account'}
@@ -109,7 +109,7 @@ function Accounts() {
         {loading ? (
           <div className="loading">Loading accounts...</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
             <div className="card">
               <h2>Your Accounts</h2>
               {accounts.length === 0 ? (

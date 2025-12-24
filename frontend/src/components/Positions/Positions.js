@@ -165,7 +165,7 @@ function Positions() {
             <div style={{ marginBottom: '15px', color: 'var(--text-secondary)', fontSize: '14px' }}>
               Showing {displayTrades.length} position{displayTrades.length !== 1 ? 's' : ''}
             </div>
-            <div style={{ overflowX: 'auto' }}>
+            <div className="table-wrapper">
               <table>
                 <thead>
                   <tr>
