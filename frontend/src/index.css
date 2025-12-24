@@ -275,6 +275,13 @@ table td {
   user-select: none;
   transition: opacity 0.2s;
   padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.navbar-brand img {
+  flex-shrink: 0;
 }
 
 .navbar-brand:hover {
@@ -282,6 +289,10 @@ table td {
   text-decoration: none;
   color: white;
   background-color: transparent;
+}
+
+.navbar-brand:hover img {
+  opacity: 0.9;
 }
 
 .navbar-right {
@@ -365,6 +376,11 @@ table td {
   .navbar-brand {
     font-size: 18px;
     margin-right: 10px;
+  }
+
+  .navbar-brand img {
+    width: 28px !important;
+    height: 28px !important;
   }
 
   .navbar-content {

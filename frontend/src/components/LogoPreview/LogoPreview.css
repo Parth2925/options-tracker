@@ -1,0 +1,120 @@
+.logo-preview-container {
+  padding: 40px 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.logo-preview-container h1 {
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.logo-preview-container > p {
+  color: var(--text-secondary);
+  margin-bottom: 30px;
+  font-size: 1.1rem;
+}
+
+.logos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 30px;
+  margin-bottom: 40px;
+}
+
+.logo-option-card {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  padding: 25px;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.logo-option-card:hover {
+  border-color: #007bff;
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+.logo-option-card h3 {
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  font-size: 1.2rem;
+}
+
+.logo-display {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
+.logo-large {
+  width: 80px;
+  height: 80px;
+}
+
+.logo-small {
+  width: 32px;
+  height: 32px;
+  margin-right: 10px;
+}
+
+.logo-desc {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+  font-style: italic;
+}
+
+.navbar-preview {
+  background: #007bff;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.instructions {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  padding: 25px;
+  margin-top: 40px;
+}
+
+.instructions h2 {
+  color: var(--text-primary);
+  margin-bottom: 15px;
+}
+
+.instructions p {
+  color: var(--text-secondary);
+  margin-bottom: 15px;
+}
+
+.instructions ul {
+  color: var(--text-secondary);
+  padding-left: 20px;
+}
+
+.instructions li {
+  margin-bottom: 8px;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .logos-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .logo-preview-container {
+    padding: 20px 15px;
+  }
+}

@@ -25,8 +25,9 @@ function Navbar() {
     <nav className="navbar">
       <div className="navbar-content">
         <div className="navbar-left">
-          <Link to="/" className="navbar-brand" style={{ textDecoration: 'none', color: 'white' }} onClick={closeMobileMenu}>
-            Options Tracker
+          <Link to="/" className="navbar-brand" style={{ textDecoration: 'none', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }} onClick={closeMobileMenu}>
+            <img src="/logo.svg" alt="Options Tracker Logo" style={{ width: '32px', height: '32px' }} />
+            <span>Options Tracker</span>
           </Link>
           <div className={`navbar-links ${mobileMenuOpen ? 'mobile-open' : ''}`}>
             <Link to="/dashboard" onClick={closeMobileMenu}>Dashboard</Link>

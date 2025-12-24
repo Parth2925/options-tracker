@@ -6,7 +6,10 @@ function PublicNavbar() {
     <nav className="navbar">
       <div className="navbar-content">
         <div>
-          <Link to="/" className="navbar-brand" style={{ textDecoration: 'none', color: 'white' }}>Options Tracker</Link>
+          <Link to="/" className="navbar-brand" style={{ textDecoration: 'none', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <img src="/logo.svg" alt="Options Tracker Logo" style={{ width: '32px', height: '32px' }} />
+            <span>Options Tracker</span>
+          </Link>
         </div>
         <div className="navbar-right">
           <Link to="/login" className="btn btn-secondary" style={{ marginRight: '10px' }}>

@@ -18,6 +18,7 @@ import Accounts from './components/Accounts/Accounts';
 import Tools from './components/Tools/Tools';
 import Profile from './components/Profile/Profile';
 import Navbar from './components/Layout/Navbar';
+import LogoPreview from './components/LogoPreview/LogoPreview';
 import api from './utils/api';
 
 function PrivateRoute({ children }) {
@@ -33,6 +34,7 @@ function AppRoutes() {
       <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/logo-preview" element={<LogoPreview />} />
       <Route path="/" element={<Home />} />
       <Route
         path="/dashboard"
