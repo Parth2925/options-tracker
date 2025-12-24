@@ -247,6 +247,11 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
           if (prev.trade_type === 'Assignment' && selectedParent.strike_price) {
             updates.assignment_price = selectedParent.strike_price;
             updates.status = 'Assigned'; // Auto-set status to Assigned
+            // Set trade_date to parent's expiration_date (assignments typically happen on expiration)
+            // Only set if this is a new trade (not editing), so users can still change it
+            if (selectedParent.expiration_date && !trade) {
+              updates.trade_date = parseDateString(selectedParent.expiration_date);
+            }
           }
           
           return updates;
@@ -826,13 +831,45 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
 
           <div className="form-group">
             <label>Close Date</label>
-            <input
-              type="date"
-              name="close_date"
-              value={formData.close_date}
-              onChange={handleChange}
-              className={fieldErrors.close_date ? 'error-field' : ''}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                type="date"
+                name="close_date"
+                value={formData.close_date}
+                onChange={handleChange}
+                className={fieldErrors.close_date ? 'error-field' : ''}
+                style={{ flex: 1 }}
+              />
+              {formData.close_date && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormData(prev => ({ ...prev, close_date: '' }));
+                    // Clear field error if exists
+                    if (fieldErrors.close_date) {
+                      setFieldErrors(prev => {
+                        const newErrors = { ...prev };
+                        delete newErrors.close_date;
+                        return newErrors;
+                      });
+                    }
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#6c757d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title="Clear close date"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
             {fieldErrors.close_date && (
               <div className="field-error">{fieldErrors.close_date}</div>
             )}

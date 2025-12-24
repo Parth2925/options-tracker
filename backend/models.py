@@ -234,7 +234,10 @@ class Trade(db.Model):
         from datetime import date
         
         open_dt = self.open_date or self.trade_date
-        close_dt = self.close_date or (date.today() if self.status == 'Open' else None)
+        # For Assignment trades, treat 'Assigned' status as open (still holding stock)
+        # For other trades, only 'Open' status means still open
+        is_open = self.status == 'Open' or (self.trade_type == 'Assignment' and self.status == 'Assigned')
+        close_dt = self.close_date or (date.today() if is_open else None)
         
         if open_dt and close_dt:
             return (close_dt - open_dt).days
@@ -249,12 +252,23 @@ class Trade(db.Model):
         days_held = self.get_days_held()
         realized_pnl = self.calculate_realized_pnl()
         
+        # For Assignment trades, use parent CSP's premium as realized P&L for return % calculation
+        if self.trade_type == 'Assignment' and self.parent_trade_id and realized_pnl == 0:
+            parent = Trade.query.get(self.parent_trade_id)
+            if parent and parent.trade_type == 'CSP' and parent.premium:
+                # Use parent CSP's premium as the realized P&L for return calculation
+                realized_pnl = float(parent.premium)
+        
         if days_held and days_held > 0 and realized_pnl != 0:
             # Get the capital at risk (for options, this is typically the strike × quantity × 100)
             # For CSP: strike × quantity × 100
+            # For Assignment: assignment_price × quantity × 100 (the capital tied up in the stock)
             # For Covered Call: assignment_price × quantity × 100 (if assigned) or strike × quantity × 100
             capital_at_risk = 0
-            if self.strike_price:
+            if self.trade_type == 'Assignment' and self.assignment_price:
+                # For Assignment trades, use assignment_price as the capital at risk
+                capital_at_risk = float(self.assignment_price) * self.contract_quantity * 100
+            elif self.strike_price:
                 capital_at_risk = float(self.strike_price) * self.contract_quantity * 100
             
             if capital_at_risk > 0:
@@ -378,7 +392,13 @@ class Trade(db.Model):
         }
         
         if include_realized_pnl:
-            result['realized_pnl'] = self.calculate_realized_pnl()
+            realized_pnl = self.calculate_realized_pnl()
+            # For Assignment trades, show parent CSP's premium as realized P&L
+            if self.trade_type == 'Assignment' and realized_pnl == 0 and self.parent_trade_id:
+                parent = Trade.query.get(self.parent_trade_id)
+                if parent and parent.trade_type == 'CSP' and parent.premium:
+                    realized_pnl = float(parent.premium)
+            result['realized_pnl'] = realized_pnl
             # Add time-based return metrics
             return_metrics = self.calculate_time_based_return()
             result['days_held'] = return_metrics['days_held']

@@ -149,7 +149,13 @@ def create_trade():
     close_date = datetime.strptime(data['close_date'], '%Y-%m-%d').date() if data.get('close_date') else None
     
     # Determine open_date: if this is a closing trade, use parent's trade_date
-    open_date = None
+    # For Assignment trades, use parent's trade_date (when CSP was opened) if available, otherwise use assignment date
+    open_date = data.get('open_date')
+    if open_date:
+        open_date = datetime.strptime(open_date, '%Y-%m-%d').date()
+    else:
+        open_date = None
+    
     if data.get('parent_trade_id') and trade_action in ['Bought to Close', 'Sold to Close']:
         parent = Trade.query.get(data['parent_trade_id'])
         if parent:
@@ -195,6 +201,12 @@ def create_trade():
                 symbol = data.get('symbol') or parent.symbol
                 strike_price = data.get('strike_price') or parent.strike_price
                 contract_quantity = data.get('contract_quantity') or parent.contract_quantity
+                
+                # Set open_date to parent's trade_date (when the CSP was opened)
+                # This ensures days_held is calculated from when the position was originally opened
+                # For Assignment trades, we track from when the CSP was opened, not just when assigned
+                if not open_date:
+                    open_date = parent.trade_date
     
     trade = Trade(
         account_id=data['account_id'],
