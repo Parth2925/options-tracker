@@ -1,0 +1,27 @@
+.view-mode-tab:hover {
+  background-color: var(--hover-bg);
+}
+
+.view-mode-tab.active:hover {
+  background-color: #0056b3;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .vix-display {
+    padding: 15px !important;
+  }
+
+  .vix-display > div:first-child {
+    font-size: 12px !important;
+  }
+
+  .vix-display > div:nth-child(2) {
+    font-size: 28px !important;
+  }
+
+  .vix-display > div:last-child {
+    font-size: 14px !important;
+  }
+}
+

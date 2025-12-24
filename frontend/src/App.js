@@ -15,6 +15,7 @@ import Trades from './components/Trades/Trades';
 import EditTrade from './components/Trades/EditTrade';
 import Positions from './components/Positions/Positions';
 import Accounts from './components/Accounts/Accounts';
+import Tools from './components/Tools/Tools';
 import Profile from './components/Profile/Profile';
 import Navbar from './components/Layout/Navbar';
 
@@ -69,6 +70,14 @@ function AppRoutes() {
         element={
           <PrivateRoute>
             <Accounts />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/tools"
+        element={
+          <PrivateRoute>
+            <Tools />
           </PrivateRoute>
         }
       />

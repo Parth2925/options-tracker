@@ -28,6 +28,13 @@ function Navbar() {
           <Link to="/" className="navbar-brand" style={{ textDecoration: 'none', color: 'white' }} onClick={closeMobileMenu}>
             Options Tracker
           </Link>
+          <div className={`navbar-links ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+            <Link to="/dashboard" onClick={closeMobileMenu}>Dashboard</Link>
+            <Link to="/positions" onClick={closeMobileMenu}>Positions</Link>
+            <Link to="/trades" onClick={closeMobileMenu}>Trades</Link>
+            <Link to="/accounts" onClick={closeMobileMenu}>Accounts</Link>
+            <Link to="/tools" onClick={closeMobileMenu}>Tools</Link>
+          </div>
           <button 
             className="mobile-menu-toggle" 
             onClick={toggleMobileMenu}
@@ -37,12 +44,6 @@ function Navbar() {
             <span></span>
             <span></span>
           </button>
-        </div>
-        <div className={`navbar-links ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-          <Link to="/dashboard" onClick={closeMobileMenu}>Dashboard</Link>
-          <Link to="/positions" onClick={closeMobileMenu}>Positions</Link>
-          <Link to="/trades" onClick={closeMobileMenu}>Trades</Link>
-          <Link to="/accounts" onClick={closeMobileMenu}>Accounts</Link>
         </div>
         <div className={`navbar-right ${mobileMenuOpen ? 'mobile-open' : ''}`}>
           <Link to="/profile" className="profile-link" onClick={closeMobileMenu}>
