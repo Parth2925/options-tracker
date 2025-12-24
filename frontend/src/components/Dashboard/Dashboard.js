@@ -532,10 +532,18 @@ function Dashboard() {
                     color: 'var(--text-primary)',
                     border: isDarkMode ? `1px solid var(--border-color)` : 'none'
                   }}>
-                    <strong>Unallocated Capital:</strong> ${openPositions.unallocated_capital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <strong>Capital Not in Open Options Positions:</strong> ${openPositions.unallocated_capital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     <span style={{ color: 'var(--text-secondary)', marginLeft: '10px' }}>
                       ({((openPositions.unallocated_capital / openPositions.total_capital) * 100).toFixed(2)}% of portfolio)
                     </span>
+                    <div style={{ 
+                      marginTop: '5px', 
+                      fontSize: '12px', 
+                      color: 'var(--text-secondary)', 
+                      fontStyle: 'italic' 
+                    }}>
+                      Note: This capital may be tied up in assigned stocks or other positions. It does not represent available cash.
+                    </div>
                   </div>
                 )}
               </div>
