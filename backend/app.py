@@ -8,7 +8,7 @@ from routes.accounts import accounts_bp
 from routes.trades import trades_bp
 from routes.dashboard import dashboard_bp
 import os
-from datetime import timedelta
+from datetime import timedelta, datetime
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -263,6 +263,11 @@ initialize_database()
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return {'status': 'ok'}, 200
+
+@app.route('/api/ping', methods=['GET'])
+def ping():
+    """Keep-alive endpoint to prevent Render free tier spin-down"""
+    return {'status': 'pong', 'timestamp': datetime.utcnow().isoformat()}, 200
 
 @app.route('/api/init-db', methods=['POST'])
 @jwt_required()

@@ -448,7 +448,23 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
 
       onSuccess();
     } catch (err) {
-      setError(err.response?.data?.error || `Failed to ${trade ? 'update' : 'create'} trade`);
+      // Handle different error types with better messages
+      if (err.message === 'Duplicate request cancelled') {
+        // Ignore duplicate request errors silently (the original request will handle it)
+        return;
+      }
+      
+      let errorMessage = `Failed to ${trade ? 'update' : 'create'} trade`;
+      if (err.response?.data?.error) {
+        errorMessage = err.response.data.error;
+      } else if (err.message) {
+        if (err.message.includes('timeout') || err.message.includes('Network Error')) {
+          errorMessage = 'Request timed out. The server may be starting up. Please try again in a moment.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

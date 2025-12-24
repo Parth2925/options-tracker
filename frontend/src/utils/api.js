@@ -23,8 +23,25 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000, // 10 second timeout
+  timeout: 30000, // 30 second timeout (increased for cold starts on Render free tier)
 });
+
+// Retry configuration
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // Start with 1 second
+
+// Helper function to delay execution
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper function to check if error is retryable
+const isRetryableError = (error) => {
+  // Retry on network errors or 5xx server errors
+  if (!error.response) {
+    return true; // Network error (timeout, connection error, etc.)
+  }
+  const status = error.response.status;
+  return status >= 500 || status === 429; // Server errors or rate limit
+};
 
 // Add token to requests
 api.interceptors.request.use(
@@ -40,10 +57,13 @@ api.interceptors.request.use(
   }
 );
 
-// Handle 401 errors (unauthorized)
+// Handle responses with retry logic
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const config = error.config || {};
+    
+    // Handle 401 errors (unauthorized) - don't retry these
     if (error.response?.status === 401) {
       const currentPath = window.location.pathname;
       // Only redirect to login if we're not already on a public page
@@ -58,7 +78,22 @@ api.interceptors.response.use(
       if (!isPublicPath) {
         window.location.href = '/login';
       }
+      return Promise.reject(error);
     }
+    
+    // Retry logic for retryable errors
+    if (!config.__retryCount) {
+      config.__retryCount = 0;
+    }
+    
+    if (config.__retryCount < MAX_RETRIES && isRetryableError(error)) {
+      config.__retryCount += 1;
+      // Exponential backoff: wait 1s, 2s, 4s
+      const delayMs = RETRY_DELAY * Math.pow(2, config.__retryCount - 1);
+      await delay(delayMs);
+      return api(config);
+    }
+    
     return Promise.reject(error);
   }
 );
