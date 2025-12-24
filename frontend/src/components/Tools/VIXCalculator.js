@@ -38,19 +38,14 @@ function VIXCalculator() {
       const response = await api.get('/accounts');
       const accountsData = response.data || [];
       
-      // Calculate total capital for each account (initial balance + deposits)
-      const accountsWithCapital = await Promise.all(accountsData.map(async (account) => {
-        try {
-          const depositsResponse = await api.get(`/accounts/${account.id}/deposits`);
-          const deposits = depositsResponse.data || [];
-          const totalDeposits = deposits.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
-          const totalCapital = (parseFloat(account.initial_balance) || 0) + totalDeposits;
-          return { ...account, totalCapital };
-        } catch (error) {
-          console.error(`Error loading deposits for account ${account.id}:`, error);
-          return { ...account, totalCapital: parseFloat(account.initial_balance) || 0 };
-        }
-      }));
+      // Use total_capital from backend (includes initial balance + deposits + realized P&L)
+      // If total_capital is not provided, fall back to calculating from initial_balance
+      const accountsWithCapital = accountsData.map((account) => {
+        const totalCapital = account.total_capital !== undefined 
+          ? account.total_capital 
+          : (parseFloat(account.initial_balance) || 0);
+        return { ...account, totalCapital };
+      });
       
       setAccounts(accountsWithCapital);
     } catch (error) {

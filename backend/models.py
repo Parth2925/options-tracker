@@ -52,6 +52,7 @@ class Account(db.Model):
     
     # Relationships
     deposits = db.relationship('Deposit', backref='account', lazy=True, cascade='all, delete-orphan')
+    withdrawals = db.relationship('Withdrawal', backref='account', lazy=True, cascade='all, delete-orphan')
     trades = db.relationship('Trade', backref='account', lazy=True, cascade='all, delete-orphan')
     
     def to_dict(self):
@@ -80,6 +81,26 @@ class Deposit(db.Model):
             'account_id': self.account_id,
             'amount': float(self.amount) if self.amount else 0,
             'deposit_date': self.deposit_date.isoformat() if self.deposit_date else None,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+class Withdrawal(db.Model):
+    __tablename__ = 'withdrawals'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False)
+    amount = db.Column(db.Numeric(15, 2), nullable=False)
+    withdrawal_date = db.Column(db.Date, nullable=False)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'amount': float(self.amount) if self.amount else 0,
+            'withdrawal_date': self.withdrawal_date.isoformat() if self.withdrawal_date else None,
             'notes': self.notes,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }

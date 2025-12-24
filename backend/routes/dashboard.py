@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Trade, Account, Deposit
+from models import db, Trade, Account, Deposit, Withdrawal
 from datetime import datetime, timedelta, date
 from collections import defaultdict
 import requests
@@ -38,16 +38,44 @@ def calculate_wheel_pnl(trades):
     return realized_pnl, unrealized_pnl
 
 def get_total_capital(account_id, user_id):
-    """Calculate total capital invested (initial balance + deposits)"""
+    """
+    Calculate total working capital for an account.
+    Includes: initial balance + deposits - withdrawals + realized P&L from all closed trades
+    
+    Realized P&L is considered as working capital since profits remain in the account
+    unless explicitly withdrawn via the withdrawal feature.
+    """
     account = Account.query.filter_by(id=account_id, user_id=user_id).first()
     if not account:
         return 0
     
+    # Start with initial balance
     total = float(account.initial_balance) if account.initial_balance else 0
     
+    # Add deposits
     deposits = Deposit.query.filter_by(account_id=account_id).all()
     for deposit in deposits:
         total += float(deposit.amount) if deposit.amount else 0
+    
+    # Subtract withdrawals
+    withdrawals = Withdrawal.query.filter_by(account_id=account_id).all()
+    for withdrawal in withdrawals:
+        total -= float(withdrawal.amount) if withdrawal.amount else 0
+    
+    # Add realized P&L from all closed trades (profits that are now working capital)
+    # Get all trades for this account
+    trades = Trade.query.filter_by(account_id=account_id).all()
+    
+    # Calculate realized P&L from closed trades
+    realized_pnl = 0
+    for trade in trades:
+        # Only count realized P&L from closed/assigned/expired trades
+        if trade.status in ['Closed', 'Assigned', 'Expired']:
+            trade_realized = trade.calculate_realized_pnl()
+            realized_pnl += trade_realized
+    
+    # Add realized P&L to total capital (these profits are now working in the account)
+    total += realized_pnl
     
     return total
 
