@@ -226,9 +226,43 @@ class Trade(db.Model):
                 call_premium = float(self.premium) if self.premium else 0
                 realized_pnl = call_premium
         
-        # Scenario 5: Assignment trade itself - no P&L, just creates stock position
+        # Scenario 5: Assignment trade itself - calculate P&L when closed
         elif self.trade_type == 'Assignment':
-            realized_pnl = 0
+            # Check if Assignment has been closed by a child trade or by having close_date set
+            # If closed, calculate P&L: (Sale Price - Assignment Price) × Quantity × 100
+            if self.status == 'Closed' or self.close_date:
+                # Check for closing trades (child trades that close this Assignment)
+                closing_trades = [child for child in self.child_trades 
+                                 if child.trade_action in ['Bought to Close', 'Sold to Close']]
+                if closing_trades:
+                    # Calculate P&L from closing trades (like CSP/CC)
+                    for closing_trade in closing_trades:
+                        assignment_cost = float(self.assignment_price) * self.contract_quantity * 100 if self.assignment_price else 0
+                        sale_proceeds = float(closing_trade.trade_price) * closing_trade.contract_quantity * 100 if closing_trade.trade_price else 0
+                        # P&L = Sale Proceeds - Assignment Cost
+                        trade_pnl = sale_proceeds - assignment_cost
+                        realized_pnl += trade_pnl
+                elif self.trade_price and self.assignment_price:
+                    # Assignment was closed directly (no child closing trade) - use trade_price as sale price
+                    assignment_cost = float(self.assignment_price) * self.contract_quantity * 100
+                    sale_proceeds = float(self.trade_price) * self.contract_quantity * 100
+                    realized_pnl = sale_proceeds - assignment_cost
+                else:
+                    # Assignment is closed but no closing trade or sale price
+                    # For closed Assignment trades, the realized P&L is the parent CSP's premium
+                    # This represents the premium received from the CSP that was assigned
+                    if self.parent_trade_id:
+                        parent = Trade.query.get(self.parent_trade_id)
+                        if parent and parent.trade_type == 'CSP' and parent.premium:
+                            # Use parent CSP's premium as realized P&L
+                            realized_pnl = float(parent.premium)
+                        else:
+                            realized_pnl = 0
+                    else:
+                        realized_pnl = 0
+            else:
+                # Assignment still open - no realized P&L
+                realized_pnl = 0
         
         # Default: For open positions, no realized P&L yet
         else:

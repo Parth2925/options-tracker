@@ -13,7 +13,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
   };
 
   const [formData, setFormData] = useState({
-    account_id: accounts.length > 0 ? accounts[0].id : '',
+    account_id: '', // Empty by default - user must select account to prevent accidental wrong account selection
     symbol: '',
     trade_type: 'CSP',
     position_type: 'Open',
