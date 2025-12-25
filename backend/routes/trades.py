@@ -95,6 +95,12 @@ def get_trades():
                 # Trade is explicitly Open with remaining quantity - don't override
                 continue
             
+            # Don't override manually set 'Closed' status (e.g., for expired worthless trades)
+            # If user manually set status to 'Closed', respect that choice
+            if trade.status == 'Closed' and not trade.close_date:
+                # This is likely a manually marked expired worthless trade - don't override
+                continue
+            
             new_status = trade.auto_determine_status()
             if new_status != trade.status:
                 trade.status = new_status
@@ -398,8 +404,15 @@ def update_trade(trade_id):
         trade.trade_date = datetime.strptime(data['trade_date'], '%Y-%m-%d').date()
     if data.get('open_date'):
         trade.open_date = datetime.strptime(data['open_date'], '%Y-%m-%d').date()
-    if data.get('close_date'):
-        trade.close_date = datetime.strptime(data['close_date'], '%Y-%m-%d').date()
+    # Handle close_date - allow clearing it (for expired worthless trades)
+    if 'close_date' in data:
+        if data['close_date'] and data['close_date'].strip():
+            # Set close_date if provided and not empty
+            trade.close_date = datetime.strptime(data['close_date'], '%Y-%m-%d').date()
+        else:
+            # Explicitly clear close_date if None or empty string is sent
+            # This is important for expired worthless trades
+            trade.close_date = None
         # Ensure open_date is set for closing trades when close_date is updated
         # This is important for return calculations - always refresh from parent
         if trade.close_date and trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:

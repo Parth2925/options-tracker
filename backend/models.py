@@ -292,7 +292,26 @@ class Trade(db.Model):
         # For Assignment trades, treat 'Assigned' status as open (still holding stock)
         # For other trades, only 'Open' status means still open
         is_open = self.status == 'Open' or (self.trade_type == 'Assignment' and self.status == 'Assigned')
-        close_dt = self.close_date or (date.today() if is_open else None)
+        
+        # Determine close date:
+        # 1. If close_date is set, use it
+        # 2. If status is 'Closed' but no close_date, use expiration_date if available (for expired worthless trades)
+        #    If expiration_date is not available, use trade_date (fallback for manual marking)
+        # 3. If still open, use today's date
+        close_dt = None
+        if self.close_date:
+            close_dt = self.close_date
+        elif self.status == 'Closed' and not self.close_date:
+            # Expired worthless trade or manually closed trade
+            # Prefer expiration_date if available, otherwise use trade_date
+            if self.expiration_date:
+                close_dt = self.expiration_date
+            elif self.trade_date:
+                # Fallback: use trade_date if expiration_date is missing
+                # This handles cases where trader manually marks as closed without expiration_date
+                close_dt = self.trade_date
+        elif is_open:
+            close_dt = date.today()
         
         if open_dt and close_dt:
             return (close_dt - open_dt).days

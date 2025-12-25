@@ -360,10 +360,9 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
       }
     }
     
-    // Parent trade validation for Covered Call trades
-    if (formData.trade_type === 'Covered Call' && !formData.parent_trade_id) {
-      errors.parent_trade_id = 'Please select the assignment (stock position) to sell calls on';
-    }
+    // Parent trade validation for Covered Call trades (optional - only if user wants to link to Assignment trade)
+    // Covered calls can be entered without a parent if the stock was purchased outside the system
+    // No validation needed - parent_trade_id is optional for Covered Call trades
     
     // Fees validation (if provided, must be non-negative)
     if (formData.fees && parseFloat(formData.fees) < 0) {
@@ -554,18 +553,34 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
             formData.trade_type === 'Assignment' || 
             formData.trade_type === 'Covered Call') && (
             <div className="form-group">
-              <label>Parent Trade (Link to existing trade) *</label>
+              <label>
+                Parent Trade (Link to existing trade)
+                {formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close' || formData.trade_type === 'Assignment' ? ' *' : ' (Optional)'}
+                {formData.trade_type === 'Covered Call' && (
+                  <span style={{ fontSize: '0.85em', color: 'var(--text-secondary)', display: 'block', marginTop: '4px', fontWeight: 'normal' }}>
+                    Link to Assignment trade if stock came from an assigned CSP, or leave empty if you own the stock from elsewhere
+                  </span>
+                )}
+              </label>
               <select
                 name="parent_trade_id"
                 value={formData.parent_trade_id}
                 onChange={handleChange}
-                required={formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close' || formData.trade_type === 'Assignment' || formData.trade_type === 'Covered Call'}
+                required={formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close' || formData.trade_type === 'Assignment'}
                 className={fieldErrors.parent_trade_id ? 'error-field' : ''}
               >
-                <option value="">Select Parent Trade</option>
+                <option value="">
+                  {formData.trade_type === 'Covered Call' 
+                    ? 'None (Stock owned from elsewhere)' 
+                    : formData.trade_type === 'Assignment'
+                    ? 'Select Parent CSP'
+                    : 'Select Parent Trade'}
+                </option>
                 {availableParentTrades.length === 0 ? (
                   <option value="" disabled>
-                    No available parent trades (create the opening trade first)
+                    {formData.trade_type === 'Covered Call' 
+                      ? 'No Assignment trades found (you can still enter the covered call without a parent)'
+                      : 'No available parent trades (create the opening trade first)'}
                   </option>
                 ) : (
                   availableParentTrades.map((parentTrade) => {
