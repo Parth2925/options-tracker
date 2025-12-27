@@ -58,3 +58,35 @@
   color: #ff6b6b;
 }
 
+/* Trades Page Header Actions */
+.trades-header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trades-header-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .trades-header-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .trades-header-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .trades-header-buttons button {
+    width: 100%;
+  }
+}
+

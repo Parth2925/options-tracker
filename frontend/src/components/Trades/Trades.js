@@ -199,9 +199,9 @@ function Trades() {
     <>
       <Navbar />
       <div className="container">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+        <div className="trades-header-actions">
           <h1>Trades</h1>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <div className="trades-header-buttons">
             <button 
               className="btn btn-secondary" 
               onClick={async () => {

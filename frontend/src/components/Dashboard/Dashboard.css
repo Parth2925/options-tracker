@@ -2,6 +2,31 @@
   display: flex;
   margin-bottom: 20px;
   align-items: flex-end;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.dashboard-filter-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+}
+
+.dashboard-filter-group label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+
+.dashboard-filter-group select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 14px;
+  min-height: 38px;
 }
 
 .metrics-grid {
@@ -38,11 +63,84 @@
   color: var(--text-primary);
 }
 
+/* Market Indices Grid */
+.market-indices-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.market-index-box {
+  padding: 15px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.market-index-name {
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.market-index-price {
+  font-size: 26px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.market-index-change {
+  font-size: 14px;
+  font-weight: 600;
+}
+
 /* Mobile Responsive Styles */
 @media (max-width: 768px) {
+  .market-indices-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .market-index-box {
+    padding: 8px 4px;
+  }
+
+  .market-index-name {
+    font-size: 9px;
+    margin-bottom: 4px;
+  }
+
+  .market-index-price {
+    font-size: 14px;
+    margin-bottom: 2px;
+  }
+
+  .market-index-change {
+    font-size: 9px;
+  }
+
   .dashboard-controls {
-    flex-direction: column;
-    gap: 15px;
+    flex-direction: row;
+    gap: 10px;
+    align-items: flex-end;
+  }
+
+  .dashboard-filter-group {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .dashboard-filter-group label {
+    font-size: 11px;
+  }
+
+  .dashboard-filter-group select {
+    padding: 6px 8px;
+    font-size: 13px;
+    min-height: 36px;
   }
 
   .metrics-grid {
@@ -68,6 +166,35 @@
 }
 
 @media (max-width: 480px) {
+  .market-indices-grid {
+    gap: 4px;
+  }
+
+  .market-index-box {
+    padding: 6px 3px;
+  }
+
+  .market-index-name {
+    font-size: 8px;
+  }
+
+  .market-index-price {
+    font-size: 12px;
+  }
+
+  .market-index-change {
+    font-size: 8px;
+  }
+
+  .dashboard-controls {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .dashboard-filter-group {
+    width: 100%;
+  }
+
   .summary-grid {
     grid-template-columns: 1fr;
   }

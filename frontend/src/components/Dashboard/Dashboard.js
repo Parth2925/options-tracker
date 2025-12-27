@@ -180,12 +180,7 @@ function Dashboard() {
         
         {/* Market Indices (CNBC Style) */}
         {Object.keys(marketIndices).length > 0 && (
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-            gap: '15px', 
-            marginBottom: '30px' 
-          }}>
+          <div className="market-indices-grid">
             {['DIA', 'SPY', 'QQQ', 'VIX'].map((index) => {
               const data = marketIndices[index];
               if (!data) return null;
@@ -206,35 +201,20 @@ function Dashboard() {
               return (
                 <div 
                   key={index}
+                  className="market-index-box"
                   style={{
-                    padding: '15px',
                     backgroundColor: backgroundColor,
                     border: `2px solid ${borderColor}`,
-                    borderRadius: '6px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    color: textColor
                   }}
                 >
-                  <div style={{ 
-                    fontSize: '14px', 
-                    fontWeight: 'bold', 
-                    color: textColor,
-                    marginBottom: '8px'
-                  }}>
+                  <div className="market-index-name">
                     {indexNames[index] || index}
                   </div>
-                  <div style={{ 
-                    fontSize: '26px', 
-                    fontWeight: 'bold',
-                    color: textColor,
-                    marginBottom: '8px'
-                  }}>
+                  <div className="market-index-price">
                     ${data.current_price.toFixed(2)}
                   </div>
-                  <div style={{ 
-                    fontSize: '14px',
-                    color: textColor,
-                    fontWeight: '600'
-                  }}>
+                  <div className="market-index-change">
                     {isPositive ? '+' : ''}{data.change.toFixed(2)} ({isPositive ? '+' : ''}{data.change_percent.toFixed(2)}%)
                   </div>
                 </div>
@@ -306,7 +286,7 @@ function Dashboard() {
         {/* Dashboard Controls - Only show if user has accounts */}
         {accounts.length > 0 && (
           <div className="dashboard-controls">
-            <div className="form-group" style={{ marginRight: '20px', width: '200px' }}>
+            <div className="dashboard-filter-group">
               <label>Account</label>
               <select
                 value={selectedAccount || 'all'}
@@ -321,7 +301,7 @@ function Dashboard() {
               </select>
             </div>
             
-            <div className="form-group" style={{ width: '200px' }}>
+            <div className="dashboard-filter-group">
               <label>Time Period</label>
               <select value={period} onChange={(e) => setPeriod(e.target.value)}>
                 <option value="week">This Week</option>
@@ -331,8 +311,8 @@ function Dashboard() {
               </select>
             </div>
             
-            <div className="form-group" style={{ width: '200px', marginLeft: '20px' }}>
-              <label>Monthly Returns (Months)</label>
+            <div className="dashboard-filter-group">
+              <label>Monthly Returns</label>
               <select value={monthsBack} onChange={(e) => setMonthsBack(parseInt(e.target.value))}>
                 <option value="6">Last 6 Months</option>
                 <option value="12">Last 12 Months</option>
