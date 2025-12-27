@@ -46,6 +46,17 @@ export const releaseNotes = {
       "Footer designed to accommodate future links (Guide, Contact, Feedback, etc.)"
     ],
     bugfixes: []
+  },
+  "1.3.0": {
+    date: "2024-12-27",
+    features: [
+      "Company logos displayed next to stock symbols on Dashboard, Positions, and Trades pages"
+    ],
+    improvements: [
+      "Enhanced visual identification of companies with logo integration from Finnhub API",
+      "Improved user experience with brand recognition in trade listings"
+    ],
+    bugfixes: []
   }
 };
 
