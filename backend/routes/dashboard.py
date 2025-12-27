@@ -505,6 +505,11 @@ def get_open_positions_allocation():
 _market_data_cache = {}
 _cache_timestamps = {}
 
+# Company logo cache (24 hour TTL - logos don't change often)
+_company_logo_cache = {}
+_logo_cache_timestamps = {}
+LOGO_CACHE_TTL = 86400  # 24 hours
+
 def _get_cached_market_data(symbol, cache_ttl=300):
     """Get market data from cache if available and not expired"""
     cache_key = symbol
@@ -693,4 +698,77 @@ def get_positions_market_data():
                 quotes[symbol] = quote_data
     
     return jsonify({'quotes': quotes}), 200
+
+def _get_cached_logo(symbol):
+    """Get cached company logo"""
+    cache_key = symbol.upper()
+    if cache_key in _company_logo_cache:
+        timestamp = _logo_cache_timestamps.get(cache_key, 0)
+        if time.time() - timestamp < LOGO_CACHE_TTL:
+            return _company_logo_cache[cache_key]
+    return None
+
+def _set_cached_logo(symbol, logo_url):
+    """Store company logo in cache"""
+    cache_key = symbol.upper()
+    _company_logo_cache[cache_key] = logo_url
+    _logo_cache_timestamps[cache_key] = time.time()
+
+def _fetch_company_logo_from_finnhub(symbol):
+    """Fetch company logo from Finnhub API"""
+    api_key = current_app.config.get('FINNHUB_API_KEY')
+    if not api_key:
+        return None
+    
+    try:
+        from urllib.parse import quote
+        encoded_symbol = quote(symbol, safe='')
+        url = f'https://finnhub.io/api/v1/stock/profile2?symbol={encoded_symbol}&token={api_key}'
+        
+        response = requests.get(url, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Check if we got valid data with logo
+            if data and 'logo' in data and data['logo']:
+                return data['logo']
+    except Exception as e:
+        print(f"Error fetching logo for {symbol}: {str(e)}")
+    
+    return None
+
+@dashboard_bp.route('/company-logos', methods=['GET'])
+@jwt_required()
+def get_company_logos():
+    """
+    Get company logos for multiple symbols.
+    Returns a dictionary mapping symbol to logo URL.
+    """
+    symbols_param = request.args.get('symbols', '')
+    
+    if not symbols_param:
+        return jsonify({'logos': {}}), 200
+    
+    # Parse symbols (comma-separated)
+    symbols = [s.strip().upper() for s in symbols_param.split(',') if s.strip()]
+    
+    if not symbols:
+        return jsonify({'logos': {}}), 200
+    
+    logos = {}
+    
+    for symbol in symbols:
+        # Try cache first
+        cached_logo = _get_cached_logo(symbol)
+        if cached_logo:
+            logos[symbol] = cached_logo
+        else:
+            # Fetch from API
+            logo_url = _fetch_company_logo_from_finnhub(symbol)
+            if logo_url:
+                _set_cached_logo(symbol, logo_url)
+                logos[symbol] = logo_url
+    
+    return jsonify({'logos': logos}), 200
 

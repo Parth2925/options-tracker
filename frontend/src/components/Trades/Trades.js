@@ -27,6 +27,7 @@ function Trades() {
   
   // Sorting state
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [companyLogos, setCompanyLogos] = useState({});
 
   const loadAccounts = async () => {
     try {
@@ -47,12 +48,37 @@ function Trades() {
       
       const response = await api.get('/trades', { params });
       setTrades(response.data);
+      
+      // Load logos for all trades
+      if (response.data && response.data.length > 0) {
+        const symbols = [...new Set(response.data.map(t => t.symbol).filter(Boolean))];
+        if (symbols.length > 0) {
+          loadCompanyLogos(symbols);
+        }
+      }
     } catch (error) {
       console.error('Error loading trades:', error);
     } finally {
       setLoading(false);
     }
   }, [selectedAccount]);
+
+  const loadCompanyLogos = async (symbols) => {
+    try {
+      if (!symbols || symbols.length === 0) {
+        return;
+      }
+
+      const params = { symbols: symbols.join(',') };
+      const response = await api.get('/dashboard/company-logos', { params });
+      
+      if (response.data && response.data.logos) {
+        setCompanyLogos(response.data.logos);
+      }
+    } catch (error) {
+      console.error('Error loading company logos:', error);
+    }
+  };
 
   useEffect(() => {
     loadAccounts();
@@ -593,7 +619,26 @@ function Trades() {
                         const [year, month, day] = trade.trade_date.split('T')[0].split('-');
                         return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
                       })() : '-'}</td>
-                      <td>{trade.symbol}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {companyLogos[trade.symbol] && (
+                            <img 
+                              src={companyLogos[trade.symbol]} 
+                              alt={`${trade.symbol} logo`}
+                              style={{ 
+                                width: '24px', 
+                                height: '24px', 
+                                objectFit: 'contain',
+                                borderRadius: '4px'
+                              }}
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          )}
+                          <span>{trade.symbol}</span>
+                        </div>
+                      </td>
                       <td>{trade.trade_type}</td>
                       <td>{trade.trade_action || '-'}</td>
                       <td>{trade.strike_price ? `$${trade.strike_price}` : '-'}</td>

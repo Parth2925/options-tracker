@@ -22,6 +22,7 @@ function Dashboard() {
   const [openPositions, setOpenPositions] = useState(null);
   const [marketIndices, setMarketIndices] = useState({});
   const [positionQuotes, setPositionQuotes] = useState({});
+  const [companyLogos, setCompanyLogos] = useState({});
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +43,27 @@ function Dashboard() {
     }
     // If no accounts, summary is already set in loadAccounts
   }, [selectedAccount, period, accounts, monthsBack]);
+
+  useEffect(() => {
+    // Load logos when openPositions changes
+    if (openPositions && openPositions.positions && openPositions.positions.length > 0) {
+      const symbols = [...new Set(openPositions.positions.map(p => p.symbol))].filter(Boolean);
+      if (symbols.length > 0) {
+        const loadLogos = async () => {
+          try {
+            const params = { symbols: symbols.join(',') };
+            const response = await api.get('/dashboard/company-logos', { params });
+            if (response.data && response.data.logos) {
+              setCompanyLogos(response.data.logos);
+            }
+          } catch (error) {
+            console.error('Error loading company logos:', error);
+          }
+        };
+        loadLogos();
+      }
+    }
+  }, [openPositions]);
 
   // Auto-refresh market data every 5 minutes
   useEffect(() => {
@@ -157,6 +179,30 @@ function Dashboard() {
       }
     } catch (error) {
       console.error('Error loading position market data:', error);
+    }
+  };
+
+  const loadCompanyLogos = async () => {
+    try {
+      if (!openPositions || !openPositions.positions || openPositions.positions.length === 0) {
+        return;
+      }
+
+      // Get unique symbols from open positions
+      const symbols = [...new Set(openPositions.positions.map(p => p.symbol))].filter(Boolean);
+      
+      if (symbols.length === 0) {
+        return;
+      }
+
+      const params = { symbols: symbols.join(',') };
+      const response = await api.get('/dashboard/company-logos', { params });
+      
+      if (response.data && response.data.logos) {
+        setCompanyLogos(response.data.logos);
+      }
+    } catch (error) {
+      console.error('Error loading company logos:', error);
     }
   };
 
@@ -448,7 +494,27 @@ function Dashboard() {
                                 : (isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa')
                             }}
                           >
-                            <td style={{ padding: '10px', fontWeight: '500', color: 'var(--text-primary)' }}>{position.symbol}</td>
+                            <td style={{ padding: '10px', fontWeight: '500', color: 'var(--text-primary)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                {companyLogos[position.symbol] && (
+                                  <img 
+                                    src={companyLogos[position.symbol]} 
+                                    alt={`${position.symbol} logo`}
+                                    style={{ 
+                                      width: '32px', 
+                                      height: '32px', 
+                                      objectFit: 'contain',
+                                      borderRadius: '4px'
+                                    }}
+                                    onError={(e) => {
+                                      // Hide image if it fails to load
+                                      e.target.style.display = 'none';
+                                    }}
+                                  />
+                                )}
+                                <span>{position.symbol}</span>
+                              </div>
+                            </td>
                             <td style={{ padding: '10px', textAlign: 'right' }}>
                               {quote ? (
                                 <div>

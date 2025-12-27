@@ -16,6 +16,7 @@ function Positions() {
   // Search and sort state
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [companyLogos, setCompanyLogos] = useState({});
 
   useEffect(() => {
     loadAccounts();
@@ -46,10 +47,36 @@ function Positions() {
       
       const response = await api.get('/dashboard/positions', { params });
       setPositions(response.data);
+      
+      // Load logos for all displayed positions
+      if (response.data) {
+        const allTrades = [...(response.data.open || []), ...(response.data.closed || [])];
+        const symbols = [...new Set(allTrades.map(t => t.symbol).filter(Boolean))];
+        if (symbols.length > 0) {
+          loadCompanyLogos(symbols);
+        }
+      }
     } catch (error) {
       console.error('Error loading positions:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCompanyLogos = async (symbols) => {
+    try {
+      if (!symbols || symbols.length === 0) {
+        return;
+      }
+
+      const params = { symbols: symbols.join(',') };
+      const response = await api.get('/dashboard/company-logos', { params });
+      
+      if (response.data && response.data.logos) {
+        setCompanyLogos(response.data.logos);
+      }
+    } catch (error) {
+      console.error('Error loading company logos:', error);
     }
   };
 
@@ -262,7 +289,43 @@ function Positions() {
                           const [year, month, day] = trade.trade_date.split('T')[0].split('-');
                           return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
                         })() : '-'}</td>
-                        <td>{trade.symbol}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {companyLogos[trade.symbol] && (
+                              <img 
+                                src={companyLogos[trade.symbol]} 
+                                alt={`${trade.symbol} logo`}
+                                style={{ 
+                                  width: '24px', 
+                                  height: '24px', 
+                                  objectFit: 'contain',
+                                  borderRadius: '4px'
+                                }}
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                }}
+                              />
+                            )}
+                            <span>{trade.symbol}</span>
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {companyLogos[trade.symbol] && (
+                            <img 
+                              src={companyLogos[trade.symbol]} 
+                              alt={`${trade.symbol} logo`}
+                              style={{ 
+                                width: '32px', 
+                                height: '32px', 
+                                objectFit: 'contain',
+                                borderRadius: '4px'
+                              }}
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          )}
+                        </td>
                         <td>{trade.trade_type}</td>
                         <td>{trade.strike_price ? `$${trade.strike_price}` : '-'}</td>
                         <td>{trade.expiration_date ? (() => {
