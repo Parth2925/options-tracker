@@ -1,0 +1,170 @@
+.about-content {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.about-section {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 30px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 4px var(--shadow);
+}
+
+.about-section h2 {
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  font-size: 24px;
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 10px;
+}
+
+.about-section h3 {
+  color: var(--text-primary);
+  margin-top: 20px;
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+
+.about-section p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 15px;
+}
+
+.version-info {
+  background: var(--bg-tertiary);
+  padding: 20px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+
+.version-info p {
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+.version-info p:last-child {
+  margin-bottom: 0;
+}
+
+.version-badge-large {
+  display: inline-block;
+  padding: 6px 12px;
+  background-color: #007bff;
+  color: white;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 16px;
+  margin-left: 8px;
+}
+
+.release-notes {
+  margin-top: 20px;
+}
+
+.release-category {
+  margin-bottom: 25px;
+}
+
+.release-category:last-child {
+  margin-bottom: 0;
+}
+
+.release-category ul {
+  margin-left: 20px;
+  margin-top: 10px;
+}
+
+.release-category li {
+  color: var(--text-secondary);
+  line-height: 1.8;
+  margin-bottom: 8px;
+}
+
+.release-history {
+  margin-top: 20px;
+}
+
+.release-item {
+  background: var(--bg-tertiary);
+  border-left: 4px solid #007bff;
+  padding: 20px;
+  margin-bottom: 20px;
+  border-radius: 4px;
+}
+
+.release-item:last-child {
+  margin-bottom: 0;
+}
+
+.release-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.release-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 20px;
+}
+
+.release-date {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.release-details {
+  margin-top: 15px;
+  color: var(--text-secondary);
+}
+
+.release-details:first-of-type {
+  margin-top: 0;
+}
+
+.release-details strong {
+  color: var(--text-primary);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.release-details ul {
+  margin-left: 20px;
+  margin-top: 8px;
+}
+
+.release-details li {
+  line-height: 1.6;
+  margin-bottom: 5px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .about-section {
+    padding: 20px;
+  }
+
+  .about-section h2 {
+    font-size: 20px;
+  }
+
+  .release-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .release-header h3 {
+    font-size: 18px;
+  }
+
+  .version-badge-large {
+    font-size: 14px;
+    padding: 4px 10px;
+  }
+}
+

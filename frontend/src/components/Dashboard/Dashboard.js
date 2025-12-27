@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../Layout/Navbar';
+import Footer from '../Layout/Footer';
 import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../utils/api';
 import './Dashboard.css';
@@ -162,10 +163,13 @@ function Dashboard() {
   // Only show loading if we're actually loading data
   if (loading && accounts.length === 0) {
     return (
-      <>
+      <div className="page-wrapper">
         <Navbar />
-        <div className="loading">Loading dashboard...</div>
-      </>
+        <div className="container">
+          <div className="loading">Loading dashboard...</div>
+        </div>
+        <Footer />
+      </div>
     );
   }
 
@@ -173,7 +177,7 @@ function Dashboard() {
   const isPositive = pnl.total_pnl >= 0;
 
   return (
-    <>
+    <div className="page-wrapper">
       <Navbar />
       <div className="container">
         <h1>Dashboard</h1>
@@ -658,7 +662,8 @@ function Dashboard() {
           </div>
         )}
       </div>
-    </>
+      <Footer />
+    </div>
   );
 }
 

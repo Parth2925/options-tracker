@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '../Layout/Navbar';
+import Footer from '../Layout/Footer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../utils/api';
@@ -129,15 +130,16 @@ function Profile() {
 
   if (!user) {
     return (
-      <>
+      <div className="page-wrapper">
         <Navbar />
         <div className="container">Loading...</div>
-      </>
+        <Footer />
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="page-wrapper">
       <Navbar />
       <div className="container">
       <h1>Profile</h1>
@@ -321,9 +323,10 @@ function Profile() {
             </small>
           </div>
         </div>
-      )}
+        )}
       </div>
-    </>
+      <Footer />
+    </div>
   );
 }
 

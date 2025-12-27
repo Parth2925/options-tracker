@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required
 from flask_mail import Mail
@@ -7,6 +7,7 @@ from routes.auth import auth_bp
 from routes.accounts import accounts_bp
 from routes.trades import trades_bp
 from routes.dashboard import dashboard_bp
+from version import get_version
 import os
 from datetime import timedelta, datetime
 from dotenv import load_dotenv
@@ -268,6 +269,11 @@ def health_check():
 def ping():
     """Keep-alive endpoint to prevent Render free tier spin-down"""
     return {'status': 'pong', 'timestamp': datetime.utcnow().isoformat()}, 200
+
+@app.route('/api/version', methods=['GET'])
+def get_app_version():
+    """Get the current application version"""
+    return jsonify({'version': get_version()}), 200
 
 @app.route('/api/init-db', methods=['POST'])
 @jwt_required()

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../Layout/Navbar';
+import Footer from '../Layout/Footer';
 import api from '../../utils/api';
 import TradeForm from './TradeForm';
 import { useToast } from '../../contexts/ToastContext';
@@ -65,7 +66,7 @@ function EditTrade() {
 
   if (error || !trade) {
     return (
-      <>
+      <div className="page-wrapper">
         <Navbar />
         <div className="container">
           <div className="card" style={{ color: 'var(--text-danger)', padding: '20px' }}>
@@ -76,12 +77,13 @@ function EditTrade() {
             </button>
           </div>
         </div>
-      </>
+        <Footer />
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="page-wrapper">
       <Navbar />
       <div className="container">
         <div style={{ marginBottom: '20px' }}>
@@ -102,7 +104,8 @@ function EditTrade() {
           onCancel={handleCancel}
         />
       </div>
-    </>
+      <Footer />
+    </div>
   );
 }
 

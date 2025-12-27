@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../Layout/Navbar';
+import Footer from '../Layout/Footer';
 import api, { API_BASE_URL } from '../../utils/api';
 import TradeForm from './TradeForm';
 import { useToast } from '../../contexts/ToastContext';
@@ -196,7 +197,7 @@ function Trades() {
   }, [trades]);
 
   return (
-    <>
+    <div className="page-wrapper">
       <Navbar />
       <div className="container">
         <div className="trades-header-actions">
@@ -661,7 +662,8 @@ function Trades() {
           </div>
         )}
       </div>
-    </>
+      <Footer />
+    </div>
   );
 }
 

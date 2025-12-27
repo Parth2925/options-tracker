@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '../Layout/Navbar';
+import Footer from '../Layout/Footer';
 import api from '../../utils/api';
 import AccountForm from './AccountForm';
 import DepositForm from './DepositForm';
@@ -135,7 +136,7 @@ function Accounts() {
   };
 
   return (
-    <>
+    <div className="page-wrapper">
       <Navbar />
       <div className="container">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
@@ -312,7 +313,8 @@ function Accounts() {
           </div>
         )}
       </div>
-    </>
+      <Footer />
+    </div>
   );
 }
 

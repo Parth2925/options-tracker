@@ -17,6 +17,7 @@ import Positions from './components/Positions/Positions';
 import Accounts from './components/Accounts/Accounts';
 import Tools from './components/Tools/Tools';
 import Profile from './components/Profile/Profile';
+import About from './components/About/About';
 import Navbar from './components/Layout/Navbar';
 import LogoPreview from './components/LogoPreview/LogoPreview';
 import api from './utils/api';
@@ -81,6 +82,14 @@ function AppRoutes() {
         element={
           <PrivateRoute>
             <Tools />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/about"
+        element={
+          <PrivateRoute>
+            <About />
           </PrivateRoute>
         }
       />

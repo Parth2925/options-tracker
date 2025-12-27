@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Navbar from '../Layout/Navbar';
+import Footer from '../Layout/Footer';
 import api from '../../utils/api';
 import { useTheme } from '../../contexts/ThemeContext';
 import './Positions.css';
@@ -113,7 +114,7 @@ function Positions() {
   }, [positions, statusFilter, searchTerm, sortConfig]);
 
   return (
-    <>
+    <div className="page-wrapper">
       <Navbar />
       <div className="container">
         <h1>Positions</h1>
@@ -287,7 +288,8 @@ function Positions() {
           </div>
         )}
       </div>
-    </>
+      <Footer />
+    </div>
   );
 }
 
