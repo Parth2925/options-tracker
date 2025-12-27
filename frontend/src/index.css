@@ -447,11 +447,12 @@ table td {
     display: flex;
   }
 
-  .navbar-links {
+  /* Hide navbar links in main navbar on mobile, but keep them visible in sidebar */
+  .navbar .navbar-links {
     display: none !important;
   }
 
-  .navbar-right {
+  .navbar .navbar-right {
     display: none !important;
   }
 
