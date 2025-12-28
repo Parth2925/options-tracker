@@ -309,23 +309,6 @@ function Positions() {
                             <span>{trade.symbol}</span>
                           </div>
                         </td>
-                        <td style={{ textAlign: 'center' }}>
-                          {companyLogos[trade.symbol] && (
-                            <img 
-                              src={companyLogos[trade.symbol]} 
-                              alt={`${trade.symbol} logo`}
-                              style={{ 
-                                width: '32px', 
-                                height: '32px', 
-                                objectFit: 'contain',
-                                borderRadius: '4px'
-                              }}
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                              }}
-                            />
-                          )}
-                        </td>
                         <td>{trade.trade_type}</td>
                         <td>{trade.strike_price ? `$${trade.strike_price}` : '-'}</td>
                         <td>{trade.expiration_date ? (() => {
