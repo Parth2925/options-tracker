@@ -60,3 +60,4 @@ If you prefer to update manually:
 
 The version will automatically be displayed in the UI after deployment.
 
+

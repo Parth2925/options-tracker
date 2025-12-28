@@ -32,3 +32,4 @@ echo "  - backend/version.py"
 echo "  - frontend/src/utils/version.js"
 echo "  - frontend/package.json"
 
+
