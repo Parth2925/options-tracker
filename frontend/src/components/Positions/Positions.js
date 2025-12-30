@@ -1,32 +1,19 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../Layout/Navbar';
 import Footer from '../Layout/Footer';
 import api from '../../utils/api';
-import { useTheme } from '../../contexts/ThemeContext';
+import OptionsPositions from './OptionsPositions';
+import StockPositions from './StockPositions';
 import './Positions.css';
 
 function Positions() {
-  const { isDarkMode } = useTheme();
-  const [positions, setPositions] = useState({ open: [], closed: [] });
+  const [activeTab, setActiveTab] = useState('options'); // 'options' or 'stocks'
   const [accounts, setAccounts] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('Open'); // Default to Open positions
-  const [loading, setLoading] = useState(true);
-  
-  // Search and sort state
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-  const [companyLogos, setCompanyLogos] = useState({});
 
   useEffect(() => {
     loadAccounts();
   }, []);
-
-  useEffect(() => {
-    if (accounts.length > 0) {
-      loadPositions();
-    }
-  }, [selectedAccount, statusFilter, accounts]);
 
   const loadAccounts = async () => {
     try {
@@ -37,301 +24,43 @@ function Positions() {
     }
   };
 
-  const loadPositions = async () => {
-    setLoading(true);
-    try {
-      const params = { status: statusFilter };
-      if (selectedAccount && selectedAccount !== 'all') {
-        params.account_id = selectedAccount;
-      }
-      
-      const response = await api.get('/dashboard/positions', { params });
-      setPositions(response.data);
-      
-      // Load logos for all displayed positions
-      if (response.data) {
-        const allTrades = [...(response.data.open || []), ...(response.data.closed || [])];
-        const symbols = [...new Set(allTrades.map(t => t.symbol).filter(Boolean))];
-        if (symbols.length > 0) {
-          loadCompanyLogos(symbols);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading positions:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadCompanyLogos = async (symbols) => {
-    try {
-      if (!symbols || symbols.length === 0) {
-        return;
-      }
-
-      const params = { symbols: symbols.join(',') };
-      const response = await api.get('/dashboard/company-logos', { params });
-      
-      if (response.data && response.data.logos) {
-        setCompanyLogos(response.data.logos);
-      }
-    } catch (error) {
-      console.error('Error loading company logos:', error);
-    }
-  };
-
-  // Sorting handler
-  const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  // Filter and sort positions
-  const displayTrades = useMemo(() => {
-    let filtered = statusFilter === 'All' 
-      ? [...positions.open, ...positions.closed]
-      : statusFilter === 'Open'
-      ? positions.open
-      : positions.closed;
-
-    // Apply search filter
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(trade => 
-        trade.symbol?.toLowerCase().includes(term) ||
-        trade.trade_type?.toLowerCase().includes(term) ||
-        trade.strike_price?.toString().includes(term)
-      );
-    }
-
-    // Apply sorting
-    if (sortConfig.key) {
-      filtered.sort((a, b) => {
-        let aVal = a[sortConfig.key];
-        let bVal = b[sortConfig.key];
-
-        // Handle different data types
-        if (sortConfig.key === 'trade_date' || sortConfig.key === 'expiration_date') {
-          aVal = aVal ? new Date(aVal).getTime() : 0;
-          bVal = bVal ? new Date(bVal).getTime() : 0;
-        } else if (typeof aVal === 'string') {
-          aVal = aVal.toLowerCase();
-          bVal = bVal?.toLowerCase() || '';
-        } else if (aVal === null || aVal === undefined) {
-          aVal = 0;
-        }
-        if (bVal === null || bVal === undefined) {
-          bVal = 0;
-        }
-
-        if (aVal < bVal) {
-          return sortConfig.direction === 'asc' ? -1 : 1;
-        }
-        if (aVal > bVal) {
-          return sortConfig.direction === 'asc' ? 1 : -1;
-        }
-        return 0;
-      });
-    }
-
-    return filtered;
-  }, [positions, statusFilter, searchTerm, sortConfig]);
-
   return (
     <div className="page-wrapper">
       <Navbar />
       <div className="container">
-        <h1>Positions</h1>
-
-        <div className="card" style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Search</label>
-              <input
-                type="text"
-                placeholder="Search by symbol, type, strike..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ width: '100%' }}
-              />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Account</label>
-              <select
-                value={selectedAccount}
-                onChange={(e) => setSelectedAccount(e.target.value)}
-              >
-                <option value="all">All Accounts</option>
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="All">All</option>
-                <option value="Open">Open</option>
-                <option value="Closed">Closed</option>
-              </select>
-            </div>
-          </div>
+        <div className="page-header">
+          <h1>Positions</h1>
         </div>
 
-        {loading ? (
-          <div className="loading">Loading positions...</div>
+        {/* Tabs - More prominent styling */}
+        <div className="positions-tabs">
+          <button
+            className={`tab-button ${activeTab === 'options' ? 'active' : ''}`}
+            onClick={() => setActiveTab('options')}
+          >
+            Options
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'stocks' ? 'active' : ''}`}
+            onClick={() => setActiveTab('stocks')}
+          >
+            Stocks
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'options' ? (
+          <OptionsPositions
+            accounts={accounts}
+            selectedAccount={selectedAccount}
+            onAccountChange={setSelectedAccount}
+          />
         ) : (
-          <div className="card">
-            <div style={{ marginBottom: '15px', color: 'var(--text-secondary)', fontSize: '14px' }}>
-              Showing {displayTrades.length} position{displayTrades.length !== 1 ? 's' : ''}
-            </div>
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th 
-                      onClick={() => handleSort('trade_date')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Date {sortConfig.key === 'trade_date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th 
-                      onClick={() => handleSort('symbol')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Symbol {sortConfig.key === 'symbol' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th 
-                      onClick={() => handleSort('trade_type')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Type {sortConfig.key === 'trade_type' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th 
-                      onClick={() => handleSort('strike_price')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Strike {sortConfig.key === 'strike_price' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th 
-                      onClick={() => handleSort('expiration_date')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Expiration {sortConfig.key === 'expiration_date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th 
-                      onClick={() => handleSort('contract_quantity')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Quantity {sortConfig.key === 'contract_quantity' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th 
-                      onClick={() => handleSort('premium')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Premium {sortConfig.key === 'premium' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th 
-                      onClick={() => handleSort('fees')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Fees {sortConfig.key === 'fees' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                    <th>Net Premium</th>
-                    <th 
-                      onClick={() => handleSort('status')}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                      className="sortable-header"
-                    >
-                      Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayTrades.length === 0 ? (
-                    <tr>
-                      <td colSpan="10" style={{ textAlign: 'center' }}>
-                        {positions.open.length === 0 && positions.closed.length === 0
-                          ? 'No positions found.'
-                          : 'No positions match your search criteria.'}
-                      </td>
-                    </tr>
-                  ) : (
-                  displayTrades.map((trade) => {
-                    const netPremium = (trade.premium || 0) - (trade.fees || 0);
-                    // Determine if trade is closed/assigned for visual styling
-                    const isClosed = trade.status === 'Closed' || trade.status === 'Assigned' || trade.status === 'Expired';
-                    return (
-                      <tr 
-                        key={trade.id}
-                        style={isClosed ? {
-                          backgroundColor: isDarkMode ? '#3a3a3a' : '#e9ecef',
-                          borderLeft: '4px solid #6c757d'
-                        } : {}}
-                      >
-                        <td>{trade.trade_date ? (() => {
-                          const [year, month, day] = trade.trade_date.split('T')[0].split('-');
-                          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
-                        })() : '-'}</td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {companyLogos[trade.symbol] && (
-                              <img 
-                                src={companyLogos[trade.symbol]} 
-                                alt={`${trade.symbol} logo`}
-                                style={{ 
-                                  width: '24px', 
-                                  height: '24px', 
-                                  objectFit: 'contain',
-                                  borderRadius: '4px'
-                                }}
-                                onError={(e) => {
-                                  e.target.style.display = 'none';
-                                }}
-                              />
-                            )}
-                            <span>{trade.symbol}</span>
-                          </div>
-                        </td>
-                        <td>{trade.trade_type}</td>
-                        <td>{trade.strike_price ? `$${trade.strike_price}` : '-'}</td>
-                        <td>{trade.expiration_date ? (() => {
-                          const [year, month, day] = trade.expiration_date.split('T')[0].split('-');
-                          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
-                        })() : '-'}</td>
-                        <td>{trade.contract_quantity}</td>
-                        <td>${trade.premium?.toFixed(2) || '0.00'}</td>
-                        <td>${trade.fees?.toFixed(2) || '0.00'}</td>
-                        <td>${netPremium.toFixed(2)}</td>
-                        <td>
-                          <span className={`status-badge status-${trade.status.toLowerCase()}`}>
-                            {trade.status}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
+          <StockPositions
+            accounts={accounts}
+            selectedAccount={selectedAccount}
+            onAccountChange={setSelectedAccount}
+          />
         )}
       </div>
       <Footer />

@@ -48,6 +48,7 @@ class Account(db.Model):
     name = db.Column(db.String(100), nullable=False)
     account_type = db.Column(db.String(50))  # e.g., 'IRA', 'Taxable', 'Margin'
     initial_balance = db.Column(db.Numeric(15, 2), default=0)
+    default_fee = db.Column(db.Numeric(10, 2), default=0)  # Default fee per contract for this account
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -62,6 +63,7 @@ class Account(db.Model):
             'name': self.name,
             'account_type': self.account_type,
             'initial_balance': float(self.initial_balance) if self.initial_balance else 0,
+            'default_fee': float(self.default_fee) if self.default_fee else 0,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
@@ -105,6 +107,58 @@ class Withdrawal(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+class StockPosition(db.Model):
+    __tablename__ = 'stock_positions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=False)
+    symbol = db.Column(db.String(20), nullable=False, index=True)
+    shares = db.Column(db.Integer, nullable=False)  # Total shares in this position
+    cost_basis_per_share = db.Column(db.Numeric(10, 2), nullable=False)  # Cost basis per share
+    acquired_date = db.Column(db.Date, nullable=False)  # When shares were acquired
+    status = db.Column(db.String(20), default='Open')  # 'Open', 'Called Away'
+    source_trade_id = db.Column(db.Integer, db.ForeignKey('trades.id'), nullable=True)  # Which trade created this position (CSP assignment or LEAPS exercise)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    account = db.relationship('Account', backref='stock_positions')
+    source_trade = db.relationship('Trade', foreign_keys=[source_trade_id], backref='created_stock_positions')
+    covered_calls = db.relationship('Trade', foreign_keys='[Trade.stock_position_id]', backref='stock_position', lazy=True)
+    
+    def get_available_shares(self):
+        """
+        Calculate available shares (total shares minus shares used by open covered calls)
+        """
+        total_used = sum(
+            trade.shares_used for trade in self.covered_calls 
+            if trade.status == 'Open' and trade.trade_type == 'Covered Call'
+        )
+        return max(0, self.shares - total_used)
+    
+    def to_dict(self, include_available_shares=False):
+        result = {
+            'id': self.id,
+            'account_id': self.account_id,
+            'symbol': self.symbol,
+            'shares': self.shares,
+            'cost_basis_per_share': float(self.cost_basis_per_share) if self.cost_basis_per_share else 0,
+            'total_cost_basis': float(self.cost_basis_per_share * self.shares) if self.cost_basis_per_share else 0,
+            'acquired_date': self.acquired_date.isoformat() if self.acquired_date else None,
+            'status': self.status,
+            'source_trade_id': self.source_trade_id,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+        
+        if include_available_shares:
+            result['available_shares'] = self.get_available_shares()
+            result['shares_used'] = self.shares - self.get_available_shares()
+        
+        return result
+
 class Trade(db.Model):
     __tablename__ = 'trades'
     
@@ -133,12 +187,22 @@ class Trade(db.Model):
     open_date = db.Column(db.Date)  # When position was originally opened (for closing trades, this is parent's trade_date)
     close_date = db.Column(db.Date)  # When position was closed
     
+    # Closing details (for single-entry closes - when original trade is updated directly)
+    close_price = db.Column(db.Numeric(10, 2))  # Price per contract when closed (for single-entry closes)
+    close_fees = db.Column(db.Numeric(10, 2))  # Fees when closed (for single-entry closes)
+    close_premium = db.Column(db.Numeric(15, 2))  # Calculated closing premium (for single-entry closes)
+    close_method = db.Column(db.String(20))  # 'buy_to_close', 'sell_to_close', 'expired', 'assigned', 'exercise'
+    
     # Status
-    status = db.Column(db.String(20), default='Open')  # 'Open', 'Closed', 'Assigned'
+    status = db.Column(db.String(20), default='Open')  # 'Open', 'Closed', 'Assigned', 'Expired'
     
     # Relationships for wheel strategy
     parent_trade_id = db.Column(db.Integer, db.ForeignKey('trades.id'))  # For rollovers/assignments
     child_trades = db.relationship('Trade', backref=db.backref('parent_trade', remote_side=[id]))
+    
+    # Stock position relationship (for covered calls)
+    stock_position_id = db.Column(db.Integer, db.ForeignKey('stock_positions.id'), nullable=True)  # Which stock position this covered call uses
+    shares_used = db.Column(db.Integer, nullable=True)  # How many shares this covered call uses (contracts × 100)
     
     # Additional fields
     notes = db.Column(db.Text)
@@ -149,20 +213,25 @@ class Trade(db.Model):
         """
         Calculate realized P&L for this trade based on its lifecycle.
         
-        Key Formula: Realized P&L = Opening Premium - Closing Premium
+        Supports both approaches:
+        1. Single-entry: Trade has close_date and close_premium (full close, updated directly)
+        2. Two-entry: Trade has child_trades (partial closes or legacy closing trades)
         
-        Scenarios:
-        1. CSP/CC closed early: Opening Premium (from parent) - Closing Premium (this trade)
-        2. CSP/CC expired worthless: Keep full premium (Opening Premium - 0)
-        3. CSP assigned: Keep premium, stock position created
-        4. Covered call assigned (shares called away): Premium + Stock Appreciation
+        Key Formula: Realized P&L = Opening Premium + Closing Premium
         """
         realized_pnl = 0
         
-        # Scenario 1: This is a closing trade (Bought to Close or Sold to Close)
-        # Realized P&L = Opening Premium - Closing Premium
-        # Handle partial closes by calculating proportional premium
-        if self.parent_trade_id and self.trade_action in ['Bought to Close', 'Sold to Close']:
+        # Scenario 1a: Single-entry close (trade has close_premium - full close, updated directly)
+        if self.close_date and self.close_premium is not None and not self.parent_trade_id:
+            # This is an opening trade that was closed directly (single-entry approach)
+            opening_premium = float(self.premium) if self.premium else 0
+            closing_premium = float(self.close_premium)
+            # Realized P&L = Opening Premium + Closing Premium (premiums are already signed)
+            realized_pnl = opening_premium + closing_premium
+        
+        # Scenario 1b: This is a closing trade (Bought to Close, Sold to Close, or Expired) - two-entry approach
+        elif self.parent_trade_id and (self.trade_action in ['Bought to Close', 'Sold to Close', 'Expired'] or 
+                                        self.status == 'Expired'):
             parent = Trade.query.get(self.parent_trade_id)
             if parent:
                 parent_premium = float(parent.premium) if parent.premium else 0
@@ -171,35 +240,71 @@ class Trade(db.Model):
                 closing_qty = self.contract_quantity or 1
                 
                 # Calculate proportional opening premium for the closed contracts
-                # Example: Opened 10 contracts with $497.50, closing 5 contracts
-                # Opening premium per contract = $497.50 / 10 = $49.75
-                # Opening premium for 5 contracts = $49.75 * 5 = $248.75
                 opening_premium_per_contract = parent_premium / parent_qty if parent_qty > 0 else 0
                 opening_premium_for_closed = opening_premium_per_contract * closing_qty
                 
-                # Realized P&L calculation for closing trades
-                # The unified formula is: Realized P&L = Opening Premium + Closing Premium
-                # This works because premiums are already signed correctly:
-                # - Positive premium = money received
-                # - Negative premium = money paid
-                #
-                # Examples:
-                # CSP: Opening +$497.50 (received), Closing -$252.50 (paid)
-                #   P&L = $497.50 + (-$252.50) = $245 ✓
-                #
-                # LEAPS: Opening -$8000 (paid), Closing +$9000 (received)
-                #   P&L = -$8000 + $9000 = $1000 ✓
-                #
-                # The key insight: Adding the premiums (which are already signed) gives us the net P&L
+                # For expired trades, closing premium is 0
+                if self.trade_action == 'Expired' or self.status == 'Expired':
+                    closing_premium = 0
+                
+                # Realized P&L = Opening Premium + Closing Premium (premiums are already signed)
                 realized_pnl = opening_premium_for_closed + closing_premium
         
-        # Scenario 2: Opening trade that expired worthless (no closing trade)
-        elif self.status == 'Closed' and not self.close_date and not any(
-            child.trade_action in ['Bought to Close', 'Sold to Close'] for child in self.child_trades
-        ):
-            # Keep the full premium (expired worthless, no cost to close)
-            opening_premium = float(self.premium) if self.premium else 0
-            realized_pnl = opening_premium
+        # Assignment trades as closing trades should return 0 - parent handles P&L
+        elif self.parent_trade_id and self.trade_type == 'Assignment':
+            # Assignment trade itself doesn't have P&L - it's just a marker
+            # The parent CSP trade keeps the premium (handled in Scenario 1c or Scenario 3)
+            realized_pnl = 0
+        
+        # Scenario 1c: Opening trade with child closing trades (two-entry approach - parent calculates from children)
+        elif self.trade_action in ['Sold to Open', 'Bought to Open'] and self.child_trades:
+            # Find all closing trades (children that closed this position)
+            # Include: Buy/Sell to Close, Expired, Assigned, Exercise
+            closing_trades = [child for child in self.child_trades 
+                             if (child.trade_action in ['Bought to Close', 'Sold to Close']) or
+                                (child.status == 'Expired') or
+                                (child.status == 'Assigned' or child.trade_type == 'Assignment') or
+                                (child.status == 'Closed' and child.close_method == 'exercise')]
+            if closing_trades:
+                # Calculate total P&L from all closing trades
+                # IMPORTANT: Use the closing trade's own calculate_realized_pnl() to avoid double-counting
+                # The closing trade already calculates: opening_premium_for_closed + closing_premium
+                total_realized_pnl = 0
+                for closing_trade in closing_trades:
+                    # Calculate P&L for this closing trade
+                    # For Buy/Sell to Close: Use Scenario 1b (proportional opening premium + closing premium)
+                    # For Expired/Assigned/Exercise: Calculate proportional opening premium + closing premium (0 for expired/assigned)
+                    if closing_trade.trade_action in ['Bought to Close', 'Sold to Close']:
+                        # Use the closing trade's own P&L calculation (Scenario 1b)
+                        closing_trade_pnl = closing_trade.calculate_realized_pnl()
+                    else:
+                        # For Expired, Assigned, or Exercise: Calculate proportional opening premium
+                        parent_premium = float(self.premium) if self.premium else 0
+                        parent_qty = self.contract_quantity or 1
+                        closing_qty = closing_trade.contract_quantity or 1
+                        opening_premium_per_contract = parent_premium / parent_qty if parent_qty > 0 else 0
+                        opening_premium_for_closed = opening_premium_per_contract * closing_qty
+                        closing_premium = 0  # Expired/Assigned/Exercise have no closing premium
+                        closing_trade_pnl = opening_premium_for_closed + closing_premium
+                    total_realized_pnl += closing_trade_pnl
+                
+                realized_pnl = total_realized_pnl
+        
+        # Scenario 2: Opening trade that expired worthless (single-entry or no closing trade)
+        elif self.status in ['Closed', 'Expired']:
+            # Check if it's a single-entry expired (has close_method='expired')
+            if self.close_method == 'expired' and self.close_premium is not None:
+                # Single-entry expired: close_premium is 0 (expired worthless)
+                opening_premium = float(self.premium) if self.premium else 0
+                closing_premium = float(self.close_premium)  # Should be 0
+                realized_pnl = opening_premium + closing_premium
+            # Check if it's expired with no closing trade and no close_premium (legacy)
+            elif not self.close_date and not self.close_premium and not any(
+                child.trade_action in ['Bought to Close', 'Sold to Close'] for child in self.child_trades
+            ):
+                # Keep the full premium (expired worthless, no cost to close)
+                opening_premium = float(self.premium) if self.premium else 0
+                realized_pnl = opening_premium
         
         # Scenario 3: CSP was assigned - keep the premium, stock position created
         elif self.trade_type == 'CSP' and self.status == 'Assigned':
@@ -209,22 +314,37 @@ class Trade(db.Model):
         
         # Scenario 4: Covered call was assigned (shares called away)
         elif self.trade_type == 'Covered Call' and self.status == 'Assigned':
-            # Find the assignment trade (stock position) - it should be the parent
-            assignment_trade = None
-            if self.parent_trade_id:
-                assignment_trade = Trade.query.get(self.parent_trade_id)
+            # Premium from covered call
+            call_premium = float(self.premium) if self.premium else 0
             
-            # If parent is assignment, calculate stock appreciation
-            if assignment_trade and assignment_trade.trade_type == 'Assignment' and assignment_trade.assignment_price and self.strike_price:
-                # Premium from covered call
-                call_premium = float(self.premium) if self.premium else 0
-                # Stock appreciation: (Call Strike - Assignment Price) × Quantity × 100
-                stock_appreciation = (float(self.strike_price) - float(assignment_trade.assignment_price)) * self.contract_quantity * 100
-                realized_pnl = call_premium + stock_appreciation
+            # Use actual cost basis from stock position if available
+            if self.stock_position_id and self.strike_price:
+                stock_position = StockPosition.query.get(self.stock_position_id)
+                if stock_position and stock_position.cost_basis_per_share:
+                    # Calculate stock appreciation using actual cost basis
+                    # Stock appreciation: (Call Strike - Cost Basis) × Quantity × 100
+                    cost_basis = float(stock_position.cost_basis_per_share)
+                    stock_appreciation = (float(self.strike_price) - cost_basis) * self.contract_quantity * 100
+                    realized_pnl = call_premium + stock_appreciation
+                elif self.strike_price:
+                    # Fallback: if no stock position, just use premium
+                    realized_pnl = call_premium
+                else:
+                    realized_pnl = call_premium
             else:
-                # Just the premium if we can't find assignment details
-                call_premium = float(self.premium) if self.premium else 0
-                realized_pnl = call_premium
+                # Fallback: try to find assignment trade (legacy support)
+                assignment_trade = None
+                if self.parent_trade_id:
+                    assignment_trade = Trade.query.get(self.parent_trade_id)
+                
+                # If parent is assignment, calculate stock appreciation
+                if assignment_trade and assignment_trade.trade_type == 'Assignment' and assignment_trade.assignment_price and self.strike_price:
+                    # Stock appreciation: (Call Strike - Assignment Price) × Quantity × 100
+                    stock_appreciation = (float(self.strike_price) - float(assignment_trade.assignment_price)) * self.contract_quantity * 100
+                    realized_pnl = call_premium + stock_appreciation
+                else:
+                    # Just the premium if we can't find assignment details
+                    realized_pnl = call_premium
         
         # Scenario 5: Assignment trade itself - calculate P&L when closed
         elif self.trade_type == 'Assignment':
@@ -276,9 +396,29 @@ class Trade(db.Model):
             # Not an opening trade, return 0
             return 0
         
-        # Find all closing trades for this position
+        # Check if trade is fully closed via single-entry approach
+        if self.close_date and self.close_premium is not None and not self.parent_trade_id:
+            # Single-entry close: trade is fully closed
+            return 0
+        
+        # Check if trade is fully closed via single-entry approach (status-based)
+        if self.status in ['Closed', 'Expired', 'Assigned'] and self.close_date and not self.parent_trade_id:
+            # Single-entry close with status: trade is fully closed
+            # But only if it's not a partial close (no child trades)
+            if not self.child_trades:
+                return 0
+        
+        # Two-entry approach: Find all closing trades for this position
+        # Include all child trades that close contracts:
+        # - Buy/Sell to Close (trade_action based)
+        # - Expired (status='Expired')
+        # - Assigned (status='Assigned' or trade_type='Assignment')
+        # - Exercise (status='Closed' with close_method='exercise')
         closing_trades = [child for child in self.child_trades 
-                         if child.trade_action in ['Bought to Close', 'Sold to Close']]
+                         if (child.trade_action in ['Bought to Close', 'Sold to Close']) or
+                            (child.status == 'Expired') or
+                            (child.status == 'Assigned' or child.trade_type == 'Assignment') or
+                            (child.status == 'Closed' and child.close_method == 'exercise')]
         total_closed_qty = sum(child.contract_quantity for child in closing_trades)
         remaining = self.contract_quantity - total_closed_qty
         
@@ -458,8 +598,14 @@ class Trade(db.Model):
             'trade_date': self.trade_date.isoformat() if self.trade_date else None,
             'open_date': self.open_date.isoformat() if self.open_date else None,
             'close_date': self.close_date.isoformat() if self.close_date else None,
+            'close_price': float(self.close_price) if self.close_price else None,
+            'close_fees': float(self.close_fees) if self.close_fees else None,
+            'close_premium': float(self.close_premium) if self.close_premium else None,
+            'close_method': self.close_method,
             'status': self.status,
             'parent_trade_id': self.parent_trade_id,
+            'stock_position_id': self.stock_position_id,
+            'shares_used': self.shares_used,
             'notes': self.notes,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
@@ -482,6 +628,14 @@ class Trade(db.Model):
         # Add remaining open quantity for opening trades
         if self.trade_action in ['Sold to Open', 'Bought to Open']:
             result['remaining_open_quantity'] = self.get_remaining_open_quantity()
+            # Include child closing trades for partial close history
+            closing_children = [child for child in self.child_trades 
+                              if (child.trade_action in ['Bought to Close', 'Sold to Close']) or
+                                 (child.status == 'Expired') or
+                                 (child.status == 'Assigned' or child.trade_type == 'Assignment') or
+                                 (child.status == 'Closed' and child.close_method == 'exercise')]
+            if closing_children:
+                result['closing_trades'] = [child.to_dict(include_realized_pnl=True) for child in closing_children]
         
         return result
 

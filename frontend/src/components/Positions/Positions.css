@@ -7,4 +7,63 @@
   background-color: var(--hover-bg);
 }
 
+/* Tabs styling - More prominent and obvious */
+.positions-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 30px;
+  background-color: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 4px var(--shadow);
+  border: 2px solid var(--border-color);
+}
+
+.tab-button {
+  padding: 16px 40px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: all 0.3s ease;
+  flex: 1;
+  text-align: center;
+  position: relative;
+  letter-spacing: 0.5px;
+}
+
+.tab-button:hover:not(.active) {
+  color: var(--text-primary);
+  background-color: var(--hover-bg);
+}
+
+.tab-button.active {
+  color: #ffffff;
+  background-color: #007bff;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+  font-weight: 700;
+  transform: translateY(-1px);
+  letter-spacing: 0.8px;
+}
+
+.tab-button.active:hover {
+  background-color: #0056b3;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .positions-tabs {
+    margin-bottom: 20px;
+  }
+  
+  .tab-button {
+    padding: 12px 20px;
+    font-size: 15px;
+  }
+}
+
 

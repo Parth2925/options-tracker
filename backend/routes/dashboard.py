@@ -66,9 +66,16 @@ def get_total_capital(account_id, user_id):
     # Get all trades for this account
     trades = Trade.query.filter_by(account_id=account_id).all()
     
+    # Filter out closing trades (two-entry approach) - only include opening trades for P&L calculation
+    # Closing trades' P&L is already included in their parent trade's P&L calculation
+    filtered_trades = [
+        trade for trade in trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
     # Calculate realized P&L from closed trades
     realized_pnl = 0
-    for trade in trades:
+    for trade in filtered_trades:
         # Only count realized P&L from closed/assigned/expired trades
         if trade.status in ['Closed', 'Assigned', 'Expired']:
             trade_realized = trade.calculate_realized_pnl()
@@ -105,8 +112,14 @@ def get_positions():
     
     trades = query.order_by(Trade.trade_date.desc()).all()
     
-    open_trades = [t.to_dict() for t in trades if t.status == 'Open']
-    closed_trades = [t.to_dict() for t in trades if t.status == 'Closed']
+    # Filter out closing trades (two-entry approach) - only show opening trades
+    filtered_trades = [
+        trade for trade in trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
+    open_trades = [t.to_dict() for t in filtered_trades if t.status == 'Open']
+    closed_trades = [t.to_dict() for t in filtered_trades if t.status in ['Closed', 'Assigned', 'Expired']]
     
     return jsonify({
         'open': open_trades,
@@ -156,13 +169,20 @@ def get_pnl():
     
     trades = query.all()
     
+    # Filter out closing trades (two-entry approach) - only include opening trades for P&L calculation
+    # Closing trades are only for partial closes tracking
+    filtered_trades = [
+        trade for trade in trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
     # Calculate PNL using improved wheel strategy logic
     realized_pnl = 0
     unrealized_pnl = 0
     
     # Group trades by account and symbol
     for acc_id in accounts_to_calc:
-        acc_trades = [t for t in trades if t.account_id == acc_id]
+        acc_trades = [t for t in filtered_trades if t.account_id == acc_id]
         acc_realized, acc_unrealized = calculate_wheel_pnl(acc_trades)
         realized_pnl += acc_realized
         unrealized_pnl += acc_unrealized
@@ -209,6 +229,12 @@ def get_summary():
     
     all_trades = query.all()
     
+    # Filter out closing trades (two-entry approach) - only count opening trades
+    filtered_trades = [
+        trade for trade in all_trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
     # Get PNL for different periods
     week_pnl = get_pnl_data(user_id, account_id, 'week', account_ids)
     month_pnl = get_pnl_data(user_id, account_id, 'month', account_ids)
@@ -217,9 +243,9 @@ def get_summary():
     
     return jsonify({
         'total_accounts': len(accounts),
-        'total_trades': len(all_trades),
-        'open_positions': len([t for t in all_trades if t.status == 'Open']),
-        'closed_positions': len([t for t in all_trades if t.status == 'Closed']),
+        'total_trades': len(filtered_trades),
+        'open_positions': len([t for t in filtered_trades if t.status == 'Open']),
+        'closed_positions': len([t for t in filtered_trades if t.status in ['Closed', 'Assigned', 'Expired']]),
         'pnl': {
             'week': week_pnl,
             'month': month_pnl,
@@ -250,8 +276,15 @@ def get_pnl_data(user_id, account_id, period, account_ids):
     
     trades = query.all()
     
+    # Filter out closing trades (two-entry approach) - only include opening trades for P&L calculation
+    # Closing trades' P&L is already included in their parent trade's P&L calculation
+    filtered_trades = [
+        trade for trade in trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
     # Use improved wheel PNL calculation
-    realized, unrealized = calculate_wheel_pnl(trades)
+    realized, unrealized = calculate_wheel_pnl(filtered_trades)
     
     accounts_to_calc = [account_id] if account_id and account_id in account_ids else account_ids
     total_capital = sum([get_total_capital(acc_id, user_id) for acc_id in accounts_to_calc])
@@ -302,6 +335,13 @@ def get_monthly_returns():
     # Get all trades (we'll filter by close_date in Python for better control)
     all_trades = query.all()
     
+    # Filter out closing trades (two-entry approach) - only include opening trades for P&L calculation
+    # Closing trades' P&L is already included in their parent trade's P&L calculation
+    filtered_trades = [
+        trade for trade in all_trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
     # Calculate total capital for return percentage calculation
     total_capital = sum([get_total_capital(acc_id, user_id) for acc_id in accounts_to_calc])
     
@@ -317,7 +357,7 @@ def get_monthly_returns():
     # Calculate date threshold for last N months
     threshold_date = today - timedelta(days=months_back * 30)  # Approximate
     
-    for trade in all_trades:
+    for trade in filtered_trades:
         # Determine the date to use for monthly grouping
         # Use close_date if available, otherwise use trade_date for closed trades
         pnl_date = None
@@ -368,7 +408,8 @@ def get_monthly_returns():
     ytd_trades = []
     year_start = date(current_year, 1, 1)
     
-    for trade in all_trades:
+    # Use filtered_trades (already filtered above) to avoid double-counting closing trades
+    for trade in filtered_trades:
         pnl_date = None
         if trade.close_date:
             pnl_date = trade.close_date

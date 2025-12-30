@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Navbar from '../Layout/Navbar';
 import Footer from '../Layout/Footer';
 import api from '../../utils/api';
-import AccountForm from './AccountForm';
-import DepositForm from './DepositForm';
-import WithdrawalForm from './WithdrawalForm';
+import AccountFormDialog from './AccountFormDialog';
+import DepositFormDialog from './DepositFormDialog';
+import WithdrawalFormDialog from './WithdrawalFormDialog';
 import { useToast } from '../../contexts/ToastContext';
 import './Accounts.css';
 
@@ -15,6 +15,7 @@ function Accounts() {
   const [deposits, setDeposits] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [showAccountForm, setShowAccountForm] = useState(false);
+  const [editingAccount, setEditingAccount] = useState(null);
   const [showDepositForm, setShowDepositForm] = useState(false);
   const [showWithdrawalForm, setShowWithdrawalForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -65,9 +66,17 @@ function Accounts() {
   };
 
   const handleAccountCreated = () => {
+    const wasEditing = !!editingAccount;
     setShowAccountForm(false);
+    setEditingAccount(null);
     loadAccounts();
-    showToast('Account created successfully!', 'success');
+    showToast(wasEditing ? 'Account updated successfully!' : 'Account created successfully!', 'success');
+  };
+
+  const handleEditAccount = (account, e) => {
+    e.stopPropagation(); // Prevent account selection when clicking edit
+    setEditingAccount(account);
+    setShowAccountForm(true);
   };
 
   const handleDepositCreated = () => {
@@ -139,18 +148,26 @@ function Accounts() {
     <div className="page-wrapper">
       <Navbar />
       <div className="container">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+        <div className="page-header">
           <h1>Accounts</h1>
-          <button className="btn btn-primary" onClick={() => setShowAccountForm(!showAccountForm)}>
-            {showAccountForm ? 'Cancel' : 'Add Account'}
-          </button>
+          <div className="page-header-actions">
+            <button className="btn btn-primary" onClick={() => {
+              setEditingAccount(null);
+              setShowAccountForm(true);
+            }}>
+              Add Account
+            </button>
+          </div>
         </div>
 
-
         {showAccountForm && (
-          <AccountForm
+          <AccountFormDialog
+            account={editingAccount}
             onSuccess={handleAccountCreated}
-            onCancel={() => setShowAccountForm(false)}
+            onCancel={() => {
+              setShowAccountForm(false);
+              setEditingAccount(null);
+            }}
           />
         )}
 
@@ -161,7 +178,11 @@ function Accounts() {
             <div className="card accounts-list-card">
               <h2>Your Accounts</h2>
               {accounts.length === 0 ? (
-                <p>No accounts yet. Create your first account!</p>
+                <div className="empty-state">
+                  <div className="empty-state-icon">📊</div>
+                  <div className="empty-state-message">No accounts yet</div>
+                  <div className="empty-state-hint">Create your first account to get started!</div>
+                </div>
               ) : (
                 <div className="accounts-list">
                   {accounts.map((account) => {
@@ -178,16 +199,27 @@ function Accounts() {
                           <p>Initial Balance: ${(account.initial_balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           <p>Total Capital: ${totalCapital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
-                        <button
-                          className="btn btn-danger"
-                          style={{ padding: '5px 10px', fontSize: '12px' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteAccount(account.id);
-                          }}
-                        >
-                          Delete
-                        </button>
+                        <div className="action-buttons">
+                          <button
+                            className="action-button action-button-edit"
+                            onClick={(e) => handleEditAccount(account, e)}
+                            title="Edit account"
+                          >
+                            <span className="action-button-icon">✏️</span>
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            className="action-button action-button-delete"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAccount(account.id);
+                            }}
+                            title="Delete account"
+                          >
+                            <span className="action-button-icon">🗑️</span>
+                            <span>Delete</span>
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -203,13 +235,13 @@ function Accounts() {
                   <div className="transaction-section">
                     <div className="transaction-header">
                       <h3>Deposits</h3>
-                      <button className="btn btn-primary" onClick={() => setShowDepositForm(!showDepositForm)}>
-                        {showDepositForm ? 'Cancel' : 'Add Deposit'}
+                      <button className="btn btn-primary" onClick={() => setShowDepositForm(true)}>
+                        Add Deposit
                       </button>
                     </div>
 
                     {showDepositForm && (
-                      <DepositForm
+                      <DepositFormDialog
                         accountId={selectedAccount}
                         onSuccess={handleDepositCreated}
                         onCancel={() => setShowDepositForm(false)}
@@ -219,7 +251,11 @@ function Accounts() {
                     {!showDepositForm && (
                       <>
                         {deposits.length === 0 ? (
-                          <p className="empty-message">No deposits yet. Add your first deposit!</p>
+                          <div className="empty-state">
+                            <div className="empty-state-icon">💰</div>
+                            <div className="empty-state-message">No deposits yet</div>
+                            <div className="empty-state-hint">Add your first deposit to track your account balance</div>
+                          </div>
                         ) : (
                           <div className="table-container">
                             <table>
@@ -252,13 +288,13 @@ function Accounts() {
                   <div className="transaction-section">
                     <div className="transaction-header">
                       <h3>Withdrawals</h3>
-                      <button className="btn btn-primary" onClick={() => setShowWithdrawalForm(!showWithdrawalForm)}>
-                        {showWithdrawalForm ? 'Cancel' : 'Add Withdrawal'}
+                      <button className="btn btn-primary" onClick={() => setShowWithdrawalForm(true)}>
+                        Add Withdrawal
                       </button>
                     </div>
 
                     {showWithdrawalForm && (
-                      <WithdrawalForm
+                      <WithdrawalFormDialog
                         accountId={selectedAccount}
                         onSuccess={handleWithdrawalCreated}
                         onCancel={() => setShowWithdrawalForm(false)}
@@ -268,7 +304,11 @@ function Accounts() {
                     {!showWithdrawalForm && (
                       <>
                         {withdrawals.length === 0 ? (
-                          <p className="empty-message">No withdrawals yet. Add your first withdrawal!</p>
+                          <div className="empty-state">
+                            <div className="empty-state-icon">💸</div>
+                            <div className="empty-state-message">No withdrawals yet</div>
+                            <div className="empty-state-hint">Track your withdrawals to maintain accurate account balance</div>
+                          </div>
                         ) : (
                           <div className="table-container">
                             <table>

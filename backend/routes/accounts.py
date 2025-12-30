@@ -66,11 +66,20 @@ def create_account():
         except (ValueError, TypeError):
             initial_balance = 0
     
+    # Convert default_fee to proper type
+    default_fee = data.get('default_fee', 0)
+    if default_fee is not None:
+        try:
+            default_fee = float(default_fee)
+        except (ValueError, TypeError):
+            default_fee = 0
+    
     account = Account(
         user_id=user_id,
         name=data['name'],
         account_type=data.get('account_type'),
-        initial_balance=initial_balance
+        initial_balance=initial_balance,
+        default_fee=default_fee
     )
     
     try:
@@ -132,6 +141,11 @@ def update_account(account_id):
         account.account_type = data['account_type']
     if data.get('initial_balance') is not None:
         account.initial_balance = data['initial_balance']
+    if data.get('default_fee') is not None:
+        try:
+            account.default_fee = float(data['default_fee'])
+        except (ValueError, TypeError):
+            account.default_fee = 0
     
     try:
         db.session.commit()

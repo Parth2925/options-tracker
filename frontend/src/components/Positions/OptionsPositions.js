@@ -1,0 +1,350 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import api from '../../utils/api';
+import { useTheme } from '../../contexts/ThemeContext';
+
+function OptionsPositions({ accounts, selectedAccount, onAccountChange }) {
+  const { isDarkMode } = useTheme();
+  const [positions, setPositions] = useState({ open: [], closed: [] });
+  const [statusFilter, setStatusFilter] = useState('Open');
+  const [loading, setLoading] = useState(true);
+  
+  // Search and sort state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [companyLogos, setCompanyLogos] = useState({});
+
+  useEffect(() => {
+    if (accounts.length > 0) {
+      loadPositions();
+    }
+  }, [selectedAccount, statusFilter, accounts]);
+
+  const loadPositions = async () => {
+    setLoading(true);
+    try {
+      const params = { status: statusFilter };
+      if (selectedAccount && selectedAccount !== 'all') {
+        params.account_id = selectedAccount;
+      }
+      
+      const response = await api.get('/dashboard/positions', { params });
+      setPositions(response.data);
+      
+      // Load logos for all displayed positions
+      if (response.data) {
+        const allTrades = [...(response.data.open || []), ...(response.data.closed || [])];
+        const symbols = [...new Set(allTrades.map(t => t.symbol).filter(Boolean))];
+        if (symbols.length > 0) {
+          loadCompanyLogos(symbols);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading positions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadCompanyLogos = async (symbols) => {
+    try {
+      if (!symbols || symbols.length === 0) {
+        return;
+      }
+
+      const params = { symbols: symbols.join(',') };
+      const response = await api.get('/dashboard/company-logos', { params });
+      
+      if (response.data && response.data.logos) {
+        setCompanyLogos(response.data.logos);
+      }
+    } catch (error) {
+      console.error('Error loading company logos:', error);
+    }
+  };
+
+  // Sorting handler
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  // Filter and sort positions
+  const displayTrades = useMemo(() => {
+    let filtered = statusFilter === 'All' 
+      ? [...positions.open, ...positions.closed]
+      : statusFilter === 'Open'
+      ? positions.open
+      : positions.closed;
+
+    // Apply search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(trade => 
+        trade.symbol?.toLowerCase().includes(term) ||
+        trade.trade_type?.toLowerCase().includes(term) ||
+        trade.strike_price?.toString().includes(term)
+      );
+    }
+
+    // Apply sorting
+    if (sortConfig.key) {
+      filtered.sort((a, b) => {
+        let aVal = a[sortConfig.key];
+        let bVal = b[sortConfig.key];
+
+        // Handle different data types
+        if (sortConfig.key === 'trade_date' || sortConfig.key === 'expiration_date') {
+          aVal = aVal ? new Date(aVal).getTime() : 0;
+          bVal = bVal ? new Date(bVal).getTime() : 0;
+        } else if (typeof aVal === 'string') {
+          aVal = aVal.toLowerCase();
+          bVal = bVal?.toLowerCase() || '';
+        } else if (aVal === null || aVal === undefined) {
+          aVal = 0;
+        }
+        if (bVal === null || bVal === undefined) {
+          bVal = 0;
+        }
+
+        if (aVal < bVal) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aVal > bVal) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [positions, statusFilter, searchTerm, sortConfig]);
+
+  return (
+    <>
+      <div className="card filters-card">
+        <div className="filters-grid">
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Search</label>
+            <input
+              type="text"
+              placeholder="Search by symbol, type, strike..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Account</label>
+            <select
+              value={selectedAccount}
+              onChange={(e) => onAccountChange(e.target.value)}
+            >
+              <option value="all">All Accounts</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Status</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="All">All</option>
+              <option value="Open">Open</option>
+              <option value="Closed">Closed</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="loading">Loading positions...</div>
+      ) : (
+        <div className="card">
+          <div style={{ marginBottom: '15px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+            Showing {displayTrades.length} position{displayTrades.length !== 1 ? 's' : ''}
+          </div>
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th 
+                    onClick={() => handleSort('trade_date')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Date {sortConfig.key === 'trade_date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th 
+                    onClick={() => handleSort('symbol')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Symbol {sortConfig.key === 'symbol' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th 
+                    onClick={() => handleSort('trade_type')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Type {sortConfig.key === 'trade_type' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th 
+                    onClick={() => handleSort('strike_price')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Strike {sortConfig.key === 'strike_price' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th 
+                    onClick={() => handleSort('expiration_date')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Expiration {sortConfig.key === 'expiration_date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th 
+                    onClick={() => handleSort('contract_quantity')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Quantity {sortConfig.key === 'contract_quantity' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th 
+                    onClick={() => handleSort('premium')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Gross Premium {sortConfig.key === 'premium' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th 
+                    onClick={() => handleSort('fees')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Total Fees {sortConfig.key === 'fees' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                  <th>Net Premium</th>
+                  <th 
+                    onClick={() => handleSort('status')}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    className="sortable-header"
+                  >
+                    Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayTrades.length === 0 ? (
+                  <tr>
+                    <td colSpan="10" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                      <div className="empty-state">
+                        <div className="empty-state-icon">
+                          {(positions.open.length === 0 && positions.closed.length === 0) ? '📊' : '🔍'}
+                        </div>
+                        <div className="empty-state-message">
+                          {(positions.open.length === 0 && positions.closed.length === 0)
+                            ? 'No positions found'
+                            : 'No positions match your search criteria'}
+                        </div>
+                        <div className="empty-state-hint">
+                          {(positions.open.length === 0 && positions.closed.length === 0)
+                            ? 'Start trading to see your positions here'
+                            : 'Try adjusting your search or filter criteria'}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                displayTrades.map((trade) => {
+                  // Calculate total fees (fee per contract × contract quantity)
+                  const feePerContract = trade.fees || 0;
+                  const contractQuantity = trade.contract_quantity || 1;
+                  const totalFees = feePerContract * contractQuantity;
+                  
+                  // The premium stored is already NET premium (after fees)
+                  // For "Sold" actions: premium = base_premium - total_fees (positive)
+                  // For "Bought" actions: premium = -(base_premium + total_fees) (negative)
+                  const netPremium = trade.premium || 0;
+                  
+                  // Calculate gross premium (before fees)
+                  // For Sold: gross = net + fees (net is positive)
+                  // For Bought: gross = -net - fees (net is negative, so -net gives base_premium + total_fees, then subtract fees)
+                  let grossPremium;
+                  if (netPremium >= 0) {
+                    // Sold action: gross = net + fees
+                    grossPremium = netPremium + totalFees;
+                  } else {
+                    // Bought action: gross = -net - fees (net is negative)
+                    grossPremium = -netPremium - totalFees;
+                  }
+                  
+                  const isClosed = trade.status === 'Closed' || trade.status === 'Assigned' || trade.status === 'Expired';
+                  return (
+                    <tr 
+                      key={trade.id}
+                      style={isClosed ? {
+                        backgroundColor: isDarkMode ? '#3a3a3a' : '#e9ecef',
+                        borderLeft: '4px solid #6c757d'
+                      } : {}}
+                    >
+                      <td>{trade.trade_date ? (() => {
+                        const [year, month, day] = trade.trade_date.split('T')[0].split('-');
+                        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                      })() : '-'}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {companyLogos[trade.symbol] && (
+                            <img 
+                              src={companyLogos[trade.symbol]} 
+                              alt={`${trade.symbol} logo`}
+                              style={{ 
+                                width: '24px', 
+                                height: '24px', 
+                                objectFit: 'contain',
+                                borderRadius: '4px'
+                              }}
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          )}
+                          <span>{trade.symbol}</span>
+                        </div>
+                      </td>
+                      <td>{trade.trade_type}</td>
+                      <td>{trade.strike_price ? `$${trade.strike_price}` : '-'}</td>
+                      <td>{trade.expiration_date ? (() => {
+                        const [year, month, day] = trade.expiration_date.split('T')[0].split('-');
+                        return new Date(parseInt(year), parseInt(month) - 1, parseInt(day)).toLocaleDateString();
+                      })() : '-'}</td>
+                      <td>{trade.contract_quantity}</td>
+                      <td>${grossPremium.toFixed(2)}</td>
+                      <td>${totalFees.toFixed(2)}</td>
+                      <td>${netPremium.toFixed(2)}</td>
+                      <td>
+                        <span className={`status-badge status-${trade.status.toLowerCase()}`}>
+                          {trade.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default OptionsPositions;

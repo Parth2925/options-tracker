@@ -465,18 +465,18 @@ function Dashboard() {
               <div>
                 <h3 style={{ marginBottom: '20px', fontSize: '18px' }}>Position Details</h3>
                 <div className="table-wrapper">
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                  <table className="position-details-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', tableLayout: 'fixed' }}>
                     <thead>
                       <tr style={{ 
                         backgroundColor: isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa', 
                         borderBottom: `2px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}` 
                       }}>
-                        <th style={{ padding: '10px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Symbol</th>
-                        <th style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Spot Price</th>
-                        <th style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Capital at Risk</th>
-                        <th style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Allocation %</th>
-                        <th style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Contracts</th>
-                        <th style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Positions</th>
+                        <th style={{ padding: '8px 4px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)', whiteSpace: 'nowrap', width: '14%' }}>Symbol</th>
+                        <th style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)', whiteSpace: 'nowrap', width: '17%' }}>Spot Price</th>
+                        <th style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)', whiteSpace: 'nowrap', width: '22%' }}>Capital at Risk</th>
+                        <th style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)', whiteSpace: 'nowrap', width: '18%' }}>Allocation %</th>
+                        <th style={{ padding: '8px 4px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)', whiteSpace: 'nowrap', width: '12%' }}>Contracts</th>
+                        <th style={{ padding: '8px 4px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)', whiteSpace: 'nowrap', width: '17%' }}>Positions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -494,17 +494,18 @@ function Dashboard() {
                                 : (isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa')
                             }}
                           >
-                            <td style={{ padding: '10px', fontWeight: '500', color: 'var(--text-primary)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <td style={{ padding: '8px 4px', fontWeight: '500', color: 'var(--text-primary)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {companyLogos[position.symbol] && (
                                   <img 
                                     src={companyLogos[position.symbol]} 
                                     alt={`${position.symbol} logo`}
                                     style={{ 
-                                      width: '32px', 
-                                      height: '32px', 
+                                      width: '20px', 
+                                      height: '20px', 
                                       objectFit: 'contain',
-                                      borderRadius: '4px'
+                                      borderRadius: '4px',
+                                      flexShrink: 0
                                     }}
                                     onError={(e) => {
                                       // Hide image if it fails to load
@@ -512,38 +513,38 @@ function Dashboard() {
                                     }}
                                   />
                                 )}
-                                <span>{position.symbol}</span>
+                                <span style={{ whiteSpace: 'nowrap' }}>{position.symbol}</span>
                               </div>
                             </td>
-                            <td style={{ padding: '10px', textAlign: 'right' }}>
+                            <td style={{ padding: '8px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                               {quote ? (
                                 <div>
                                   <div style={{ 
                                     fontWeight: 'bold',
                                     color: isPositive ? '#28a745' : '#dc3545',
-                                    fontSize: '15px'
+                                    fontSize: '13px'
                                   }}>
                                     ${quote.current_price.toFixed(2)}
                                   </div>
                                   <div style={{ 
-                                    fontSize: '12px',
+                                    fontSize: '10px',
                                     color: isPositive ? '#28a745' : '#dc3545'
                                   }}>
                                     {isPositive ? '+' : ''}{quote.change.toFixed(2)} ({isPositive ? '+' : ''}{quote.change_percent.toFixed(2)}%)
                                   </div>
                                 </div>
                               ) : (
-                                <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>Loading...</span>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>Loading...</span>
                               )}
                             </td>
-                            <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                            <td style={{ padding: '8px 4px', textAlign: 'right', color: 'var(--text-primary)', whiteSpace: 'nowrap', fontSize: '12px' }}>
                               ${position.capital_at_risk.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
-                            <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                            <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)', whiteSpace: 'nowrap', fontSize: '13px' }}>
                               {position.allocation_percentage.toFixed(2)}%
                             </td>
-                            <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-primary)' }}>{position.contract_quantity}</td>
-                            <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-primary)' }}>{position.position_count}</td>
+                            <td style={{ padding: '8px 4px', textAlign: 'center', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{position.contract_quantity}</td>
+                            <td style={{ padding: '8px 4px', textAlign: 'center', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{position.position_count}</td>
                           </tr>
                         );
                       })}
@@ -554,18 +555,18 @@ function Dashboard() {
                         fontWeight: 'bold', 
                         borderTop: `2px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}` 
                       }}>
-                        <td style={{ padding: '10px', color: 'var(--text-primary)' }}>Total</td>
-                        <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-primary)' }}>-</td>
-                        <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                        <td style={{ padding: '8px 4px', color: 'var(--text-primary)' }}>Total</td>
+                        <td style={{ padding: '8px 4px', textAlign: 'right', color: 'var(--text-primary)' }}>-</td>
+                        <td style={{ padding: '8px 4px', textAlign: 'right', color: 'var(--text-primary)', whiteSpace: 'nowrap', fontSize: '12px' }}>
                           ${openPositions.total_capital_at_risk.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                        <td style={{ padding: '8px 6px', textAlign: 'right', color: 'var(--text-primary)', whiteSpace: 'nowrap', fontSize: '13px' }}>
                           {((openPositions.total_capital_at_risk / openPositions.total_capital) * 100).toFixed(2)}%
                         </td>
-                        <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                        <td style={{ padding: '8px 4px', textAlign: 'center', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                           {openPositions.positions.reduce((sum, p) => sum + p.contract_quantity, 0)}
                         </td>
-                        <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                        <td style={{ padding: '8px 4px', textAlign: 'center', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                           {openPositions.positions.reduce((sum, p) => sum + p.position_count, 0)}
                         </td>
                       </tr>

@@ -7,6 +7,7 @@ from routes.auth import auth_bp
 from routes.accounts import accounts_bp
 from routes.trades import trades_bp
 from routes.dashboard import dashboard_bp
+from routes.stock_positions import stock_positions_bp
 from version import get_version
 import os
 from datetime import timedelta, datetime
@@ -101,6 +102,7 @@ app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(accounts_bp, url_prefix='/api/accounts')
 app.register_blueprint(trades_bp, url_prefix='/api/trades')
 app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
+app.register_blueprint(stock_positions_bp, url_prefix='/api/stock-positions')
 
 # Initialize database on app startup (works with gunicorn)
 def initialize_database():

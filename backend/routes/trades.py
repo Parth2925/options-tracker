@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Trade, Account
+from models import db, Trade, Account, StockPosition
 from datetime import datetime
 import pandas as pd
 import io
@@ -106,7 +106,14 @@ def get_trades():
                 trade.status = new_status
     db.session.commit()
     
-    return jsonify([trade.to_dict(include_realized_pnl=True) for trade in trades]), 200
+    # Filter out closing trades (two-entry approach) - only show opening trades
+    # Closing trades are only for partial closes tracking and shouldn't appear in main list
+    filtered_trades = [
+        trade for trade in trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
+    return jsonify([trade.to_dict(include_realized_pnl=True) for trade in filtered_trades]), 200
 
 @trades_bp.route('', methods=['POST'])
 @jwt_required()
@@ -114,8 +121,17 @@ def create_trade():
     user_id = get_user_id()
     data = request.get_json()
     
-    if not data or not data.get('account_id') or not data.get('symbol') or not data.get('trade_type'):
-        return jsonify({'error': 'account_id, symbol, and trade_type are required'}), 400
+    if not data:
+        return jsonify({'error': 'Request data is required'}), 400
+    
+    if not data.get('account_id'):
+        return jsonify({'error': 'Please select an account'}), 400
+    
+    if not data.get('symbol') or not data.get('symbol').strip():
+        return jsonify({'error': 'Symbol is required (e.g., AAPL, TSLA)'}), 400
+    
+    if not data.get('trade_type'):
+        return jsonify({'error': 'Trade type is required'}), 400
     
     # Verify account belongs to user
     account = Account.query.filter_by(id=data['account_id'], user_id=user_id).first()
@@ -150,6 +166,40 @@ def create_trade():
                 return jsonify({
                     'error': f'Cannot close {contract_quantity} contracts. Only {remaining_qty} contracts remaining open.'
                 }), 400
+    
+    # Validate covered call requires stock position
+    if trade_type == 'Covered Call':
+        stock_position_id = data.get('stock_position_id')
+        if not stock_position_id:
+            return jsonify({'error': 'Please select a stock position. You need to own shares to write a covered call.'}), 400
+        
+        # Verify stock position exists and belongs to user's account
+        stock_position = StockPosition.query.get(stock_position_id)
+        if not stock_position:
+            return jsonify({'error': 'Stock position not found'}), 404
+        
+        # Verify stock position belongs to the same account
+        if stock_position.account_id != data['account_id']:
+            return jsonify({'error': 'Stock position must belong to the same account'}), 400
+        
+        # Verify symbol matches
+        if stock_position.symbol.upper() != data.get('symbol', '').upper():
+            return jsonify({'error': f'Stock position symbol ({stock_position.symbol}) does not match trade symbol ({data.get("symbol")})'}), 400
+        
+        # Verify stock position is open
+        if stock_position.status != 'Open':
+            return jsonify({'error': f'Stock position is not open (status: {stock_position.status})'}), 400
+        
+        # Calculate shares needed (contracts × 100)
+        shares_needed = contract_quantity * 100
+        
+        # Get available shares (total - used by other open covered calls)
+        available_shares = stock_position.get_available_shares()
+        
+        if shares_needed > available_shares:
+            return jsonify({
+                'error': f'Insufficient shares available. Need {shares_needed} shares, but only {available_shares} available in stock position.'
+            }), 400
     
     trade_date = datetime.strptime(data['trade_date'], '%Y-%m-%d').date() if data.get('trade_date') else datetime.now().date()
     close_date = datetime.strptime(data['close_date'], '%Y-%m-%d').date() if data.get('close_date') else None
@@ -232,6 +282,8 @@ def create_trade():
         close_date=close_date,
         status=status,
         parent_trade_id=data.get('parent_trade_id'),
+        stock_position_id=data.get('stock_position_id'),
+        shares_used=(contract_quantity * 100) if trade_type == 'Covered Call' and data.get('stock_position_id') else None,
         notes=data.get('notes')
     )
     
@@ -318,6 +370,24 @@ def create_trade():
                         # Set parent's open_date if not set
                         if not parent.open_date:
                             parent.open_date = parent.trade_date
+                        
+                        # Auto-create stock position from CSP assignment
+                        # Shares = contracts × 100, Cost basis = assignment_price (strike price)
+                        shares = trade.contract_quantity * 100
+                        cost_basis = float(trade.assignment_price) if trade.assignment_price else float(parent.strike_price) if parent.strike_price else 0
+                        
+                        if shares > 0 and cost_basis > 0:
+                            stock_position = StockPosition(
+                                account_id=trade.account_id,
+                                symbol=trade.symbol,
+                                shares=shares,
+                                cost_basis_per_share=cost_basis,
+                                acquired_date=trade.trade_date,
+                                status='Open',
+                                source_trade_id=trade.id,
+                                notes=f'Assigned from CSP trade #{parent.id}'
+                            )
+                            db.session.add(stock_position)
                 elif trade.trade_type == 'Covered Call' and parent.trade_type == 'Assignment':
                     # Covered call on assigned shares - no status change needed
                     pass
@@ -380,9 +450,26 @@ def update_trade(trade_id):
                 }), 400
     
     # Update fields
+    if data.get('account_id'):
+        # Validate new account belongs to user
+        new_account = Account.query.filter_by(id=data['account_id'], user_id=user_id).first()
+        if not new_account:
+            return jsonify({'error': 'Account not found or unauthorized'}), 404
+        # If changing account, validate stock_position_id belongs to new account
+        if trade.stock_position_id and trade.account_id != data['account_id']:
+            stock_position = StockPosition.query.get(trade.stock_position_id)
+            if stock_position and stock_position.account_id != data['account_id']:
+                # Clear stock_position_id if it doesn't belong to new account
+                trade.stock_position_id = None
+                trade.shares_used = None
+        trade.account_id = data['account_id']
     if data.get('symbol'):
         trade.symbol = data['symbol'].upper()
     if data.get('trade_type'):
+        # If changing trade type away from Covered Call, clear stock_position_id
+        if trade.trade_type == 'Covered Call' and data['trade_type'] != 'Covered Call':
+            trade.stock_position_id = None
+            trade.shares_used = None
         trade.trade_type = data['trade_type']
     if data.get('position_type'):
         trade.position_type = data['position_type']
@@ -413,14 +500,19 @@ def update_trade(trade_id):
             # Explicitly clear close_date if None or empty string is sent
             # This is important for expired worthless trades
             trade.close_date = None
-        # Ensure open_date is set for closing trades when close_date is updated
-        # This is important for return calculations - always refresh from parent
-        if trade.close_date and trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+    
+    # Ensure open_date is set correctly for closed trades (important for days_held and return calculations)
+    # For single-entry closes (trade has close_date and close_premium), open_date should be trade_date
+    # For two-entry closes (closing trades with parent), open_date should be parent's trade_date
+    if trade.close_date:
+        if trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+            # Two-entry close: use parent's trade_date
             parent = Trade.query.get(trade.parent_trade_id)
             if parent:
-                # Always set open_date from parent when close_date is updated
-                # This ensures return calculations use the correct dates
                 trade.open_date = parent.trade_date
+        elif not trade.open_date:
+            # Single-entry close: use trade's own trade_date if open_date not set
+            trade.open_date = trade.trade_date
     if data.get('status'):
         trade.status = data['status']
     if data.get('parent_trade_id') is not None:
@@ -434,6 +526,69 @@ def update_trade(trade_id):
                     trade.close_date = trade.trade_date
     if data.get('notes') is not None:
         trade.notes = data['notes']
+    
+    # Handle close details (for editing closed trades)
+    close_price_changed = 'close_price' in data
+    close_fees_changed = 'close_fees' in data
+    close_method_changed = 'close_method' in data
+    
+    if close_price_changed:
+        trade.close_price = data['close_price'] if data['close_price'] is not None and data['close_price'] != '' else None
+    if close_fees_changed:
+        trade.close_fees = data['close_fees'] if data['close_fees'] is not None and data['close_fees'] != '' else 0
+    if close_method_changed:
+        trade.close_method = data['close_method'] if data['close_method'] else None
+    
+    # Auto-calculate close_premium if close_price or close_fees changed and close_method requires it
+    # Always auto-calculate when close_price or close_fees change to keep close_premium in sync
+    # User can still manually override by explicitly changing close_premium in the form
+    close_premium_provided = 'close_premium' in data and data.get('close_premium') is not None and data.get('close_premium') != ''
+    
+    # Auto-calculate if:
+    # 1. close_premium not provided (frontend didn't send it), OR
+    # 2. close_price or close_fees changed (always recalculate to keep in sync), OR
+    # 3. close_premium is None/empty in data (user cleared it)
+    should_auto_calculate = False
+    if 'close_premium' not in data:
+        # close_premium not provided - auto-calculate if conditions are met
+        should_auto_calculate = True
+    elif close_price_changed or close_fees_changed:
+        # close_price or close_fees changed - always auto-calculate to keep close_premium in sync
+        # This ensures close_premium updates when user edits close_price or close_fees
+        should_auto_calculate = True
+    elif 'close_premium' in data and (data['close_premium'] is None or data['close_premium'] == ''):
+        # close_premium is None or empty - auto-calculate if close_price or close_fees changed
+        should_auto_calculate = (close_price_changed or close_fees_changed)
+    
+    if should_auto_calculate and trade.close_method in ['buy_to_close', 'sell_to_close']:
+        if trade.close_price is not None:
+            # Determine trade_action based on close_method
+            trade_action = 'Bought to Close' if trade.close_method == 'buy_to_close' else 'Sold to Close'
+            # Calculate premium using the same logic as the close endpoint
+            trade.close_premium = calculate_premium(trade.close_price, trade_action, trade.contract_quantity, trade.close_fees or 0)
+    elif close_premium_provided:
+        # User explicitly provided close_premium (non-null, non-empty), use it
+        trade.close_premium = data['close_premium']
+    
+    # Handle stock_position_id for covered calls (optional for backward compatibility)
+    if 'stock_position_id' in data:
+        if data['stock_position_id']:
+            # Validate stock position if provided
+            stock_position = StockPosition.query.get(data['stock_position_id'])
+            if not stock_position:
+                return jsonify({'error': 'Stock position not found'}), 404
+            if stock_position.account_id != trade.account_id:
+                return jsonify({'error': 'Stock position must belong to the same account'}), 400
+            if stock_position.symbol.upper() != trade.symbol.upper():
+                return jsonify({'error': f'Stock position symbol ({stock_position.symbol}) does not match trade symbol ({trade.symbol})'}), 400
+            trade.stock_position_id = data['stock_position_id']
+            # Update shares_used if it's a covered call
+            if trade.trade_type == 'Covered Call':
+                trade.shares_used = trade.contract_quantity * 100
+        else:
+            # Allow clearing stock_position_id (for backward compatibility)
+            trade.stock_position_id = None
+            trade.shares_used = None
     
     # Handle Assignment trades specially
     is_assignment = trade.trade_type == 'Assignment'
@@ -495,10 +650,23 @@ def update_trade(trade_id):
             if not parent.open_date:
                 parent.open_date = parent.trade_date
     
+    # Final check: Ensure open_date is set correctly for closed trades (important for days_held and return calculations)
+    # This ensures open_date is correct even if close_date was set earlier in the update
+    if trade.close_date:
+        if trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+            # Two-entry close: use parent's trade_date
+            parent = Trade.query.get(trade.parent_trade_id)
+            if parent:
+                trade.open_date = parent.trade_date
+        elif not trade.open_date:
+            # Single-entry close: use trade's own trade_date if open_date not set
+            trade.open_date = trade.trade_date
+    
     trade.updated_at = datetime.utcnow()
     
     try:
         db.session.commit()
+        # Return updated trade with recalculated P&L, days_held, and return metrics
         return jsonify(trade.to_dict(include_realized_pnl=True)), 200
     except Exception as e:
         db.session.rollback()
@@ -642,14 +810,43 @@ def import_trades():
         
         # Now update open_date and other parent-dependent fields AFTER parent relationships are set
         for trade in trades:
-            # For closing trades, ensure open_date is set from parent if not provided
-            if trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
+            # Handle single-entry closes (new format: has close_date and close_premium/close_method, no parent_trade_id)
+            if trade.close_date and (trade.close_premium is not None or trade.close_method) and not trade.parent_trade_id:
+                # Single-entry close: ensure open_date is set (should be trade_date if not provided)
+                if not trade.open_date:
+                    trade.open_date = trade.trade_date
+                # Ensure status is set correctly based on close_method
+                if trade.close_method == 'expired':
+                    trade.status = 'Expired'
+                elif trade.close_method == 'assigned':
+                    trade.status = 'Assigned'
+                elif trade.close_method in ['buy_to_close', 'sell_to_close', 'exercise']:
+                    trade.status = 'Closed'
+                elif not trade.status or trade.status == 'Open':
+                    # Default to Closed if status not set
+                    trade.status = 'Closed'
+            
+            # Handle two-entry closes (old format: has parent_trade_id)
+            elif trade.parent_trade_id and trade.trade_action in ['Bought to Close', 'Sold to Close']:
                 parent = Trade.query.get(trade.parent_trade_id)
-                if parent and not trade.open_date:
-                    trade.open_date = parent.trade_date
-                # Ensure close_date is set if not provided
-                if not trade.close_date:
-                    trade.close_date = trade.trade_date
+                if parent:
+                    if not trade.open_date:
+                        trade.open_date = parent.trade_date
+                    # Ensure close_date is set if not provided
+                    if not trade.close_date:
+                        trade.close_date = trade.trade_date
+                    # Set closing trade status to Closed
+                    trade.status = 'Closed'
+                    # Update parent trade status if it's fully closed
+                    remaining_qty = parent.get_remaining_open_quantity()
+                    if remaining_qty == 0:
+                        # Parent is fully closed, update its status
+                        if parent.status == 'Open':
+                            parent.status = 'Closed'
+                        if not parent.close_date:
+                            parent.close_date = trade.trade_date
+                        if not parent.open_date:
+                            parent.open_date = parent.trade_date
             
             # For Assignment trades, ensure status is 'Assigned'
             if trade.trade_type == 'Assignment':
@@ -1004,6 +1201,10 @@ def export_trades():
         'status': [],
         'parent_trade_id': [],
         'assignment_price': [],
+        'close_price': [],  # For single-entry closes
+        'close_fees': [],  # For single-entry closes
+        'close_premium': [],  # For single-entry closes
+        'close_method': [],  # For single-entry closes
         'notes': []
     }
     
@@ -1025,31 +1226,518 @@ def export_trades():
         export_data['status'].append(trade.status)
         export_data['parent_trade_id'].append(trade.parent_trade_id if trade.parent_trade_id else None)
         export_data['assignment_price'].append(trade.assignment_price if trade.assignment_price else None)
+        export_data['close_price'].append(float(trade.close_price) if trade.close_price else None)
+        export_data['close_fees'].append(float(trade.close_fees) if trade.close_fees else None)
+        export_data['close_premium'].append(float(trade.close_premium) if trade.close_premium else None)
+        export_data['close_method'].append(trade.close_method if trade.close_method else None)
         export_data['notes'].append(trade.notes if trade.notes else '')
     
-    df = pd.DataFrame(export_data)
+    try:
+        df = pd.DataFrame(export_data)
+    except Exception as e:
+        return jsonify({'error': f'Failed to create export data: {str(e)}'}), 500
     
     if format_type == 'excel' or format_type == 'xlsx':
         # Create Excel file
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Trades')
-        output.seek(0)
-        return send_file(
-            output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=f'trades_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
-        )
+        try:
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Trades')
+            output.seek(0)
+            return send_file(
+                output,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=f'trades_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+            )
+        except Exception as e:
+            return jsonify({'error': f'Failed to create Excel file: {str(e)}'}), 500
     else:
         # Create CSV file
-        output = io.StringIO()
-        df.to_csv(output, index=False)
-        output.seek(0)
-        return send_file(
-            io.BytesIO(output.getvalue().encode('utf-8')),
-            mimetype='text/csv',
-            as_attachment=True,
-            download_name=f'trades_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        try:
+            output = io.StringIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+            csv_bytes = output.getvalue().encode('utf-8')
+            return send_file(
+                io.BytesIO(csv_bytes),
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'trades_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+            )
+        except Exception as e:
+            return jsonify({'error': f'Failed to create CSV file: {str(e)}'}), 500
+
+@trades_bp.route('/<int:trade_id>/close', methods=['POST'])
+@jwt_required()
+def close_trade(trade_id):
+    """
+    Close a trade with one of several methods based on trade type:
+    - CSP: Buy to Close, Expired, Assigned
+    - Covered Call: Buy to Close, Expired, Assigned
+    - LEAPS: Sell to Close, Expired, Exercise
+    
+    Request body:
+    {
+        "close_method": "buy_to_close" | "expired" | "assigned" | "sell_to_close" | "exercise",
+        "close_date": "2025-01-15",
+        "trade_price": 0.25,  # For buy_to_close/sell_to_close
+        "fees": 1.50,         # For buy_to_close/sell_to_close
+        "contract_quantity": 5,  # Optional, defaults to remaining
+        "assignment_price": 100.00  # For assigned (optional, defaults to strike)
+    }
+    """
+    user_id = get_user_id()
+    trade = Trade.query.get(trade_id)
+    
+    if not trade:
+        return jsonify({'error': 'Trade not found'}), 404
+    
+    # Verify account belongs to user
+    account = Account.query.filter_by(id=trade.account_id, user_id=user_id).first()
+    if not account:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Verify trade is open
+    if trade.status not in ['Open', 'Assigned']:
+        return jsonify({'error': f'Cannot close this trade. It is already {trade.status.lower()}. Only open or assigned trades can be closed.'}), 400
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Request data is required'}), 400
+    
+    close_method = data.get('close_method')
+    
+    if not close_method:
+        return jsonify({'error': 'Please select a close method'}), 400
+    
+    try:
+        # Determine available close methods based on trade type
+        if trade.trade_type == 'LEAPS':
+            if close_method not in ['sell_to_close', 'expired', 'exercise']:
+                return jsonify({'error': f'Invalid close method for LEAPS trades. Please select: Sell to Close, Expired, or Exercise'}), 400
+        elif trade.trade_type in ['CSP', 'Covered Call']:
+            if close_method not in ['buy_to_close', 'expired', 'assigned']:
+                return jsonify({'error': f'Invalid close method for {trade.trade_type} trades. Please select: Buy to Close, Expired, or Assigned'}), 400
+        else:
+            return jsonify({'error': f'Close workflow is not supported for {trade.trade_type} trades'}), 400
+        
+        # Handle each close method
+        if close_method == 'buy_to_close':
+            return handle_buy_to_close(trade, data)
+        elif close_method == 'sell_to_close':
+            return handle_sell_to_close(trade, data)
+        elif close_method == 'expired':
+            return handle_expired(trade, data)
+        elif close_method == 'assigned':
+            return handle_assigned(trade, data)
+        elif close_method == 'exercise':
+            return handle_exercise(trade, data)
+        else:
+            return jsonify({'error': 'Invalid close_method'}), 400
+            
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+def handle_buy_to_close(trade, data):
+    """Handle Buy to Close for CSP or Covered Call"""
+    if trade.trade_action not in ['Sold to Open']:
+        return jsonify({'error': 'Buy to Close is only for trades opened with "Sold to Open"'}), 400
+    
+    # Get remaining quantity
+    remaining_qty = trade.get_remaining_open_quantity()
+    if remaining_qty <= 0:
+        return jsonify({'error': 'No contracts remaining to close'}), 400
+    
+    # Use provided quantity or default to remaining
+    contract_quantity = data.get('contract_quantity', remaining_qty)
+    if contract_quantity > remaining_qty:
+        return jsonify({'error': f'Cannot close {contract_quantity} contracts. Only {remaining_qty} contracts remaining open.'}), 400
+    
+    # Validate required fields
+    if not data.get('trade_price'):
+        return jsonify({'error': 'Trade price is required for Buy to Close'}), 400
+    
+    try:
+        trade_price = float(data['trade_price'])
+        if trade_price <= 0:
+            return jsonify({'error': 'Trade price must be greater than 0'}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Trade price must be a valid number'}), 400
+    
+    close_date = datetime.strptime(data.get('close_date', data.get('trade_date', datetime.now().date().isoformat())), '%Y-%m-%d').date()
+    trade_price = float(data['trade_price'])
+    fees = float(data.get('fees', 0))
+    
+    # Calculate premium (negative for buying)
+    premium = calculate_premium(trade_price, 'Bought to Close', contract_quantity, fees)
+    
+    # Check if this is a full close or partial close
+    total_closed = remaining_qty - contract_quantity
+    is_full_close = total_closed <= 0
+    
+    if is_full_close:
+        # FULL CLOSE: Update original trade directly (single-entry approach)
+        trade.status = 'Closed'
+        trade.close_date = close_date
+        trade.close_price = trade_price
+        trade.close_fees = fees
+        trade.close_premium = premium
+        trade.close_method = 'buy_to_close'
+        if data.get('notes'):
+            trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+        
+        if not trade.open_date:
+            trade.open_date = trade.trade_date
+        
+        db.session.commit()
+        return jsonify(trade.to_dict(include_realized_pnl=True)), 200
+    else:
+        # PARTIAL CLOSE: Create closing trade (two-entry approach for partial closes)
+        closing_trade = Trade(
+            account_id=trade.account_id,
+            symbol=trade.symbol,
+            trade_type=trade.trade_type,
+            position_type='Close',
+            strike_price=trade.strike_price,
+            expiration_date=trade.expiration_date,
+            contract_quantity=contract_quantity,
+            trade_price=trade_price,
+            trade_action='Bought to Close',
+            premium=premium,
+            fees=fees,
+            trade_date=close_date,
+            open_date=trade.trade_date,
+            close_date=close_date,
+            status='Closed',
+            parent_trade_id=trade.id,
+            notes=data.get('notes')
         )
+        
+        db.session.add(closing_trade)
+        
+        # Update parent trade status (keep open for partial close)
+        trade.status = 'Open'
+        trade.close_date = None
+        
+        if not trade.open_date:
+            trade.open_date = trade.trade_date
+        
+        db.session.commit()
+        return jsonify(closing_trade.to_dict(include_realized_pnl=True)), 201
+
+def handle_sell_to_close(trade, data):
+    """Handle Sell to Close for LEAPS"""
+    if trade.trade_action not in ['Bought to Open']:
+        return jsonify({'error': 'Sell to Close is only for trades opened with "Bought to Open"'}), 400
+    
+    # Get remaining quantity
+    remaining_qty = trade.get_remaining_open_quantity()
+    if remaining_qty <= 0:
+        return jsonify({'error': 'No contracts remaining to close'}), 400
+    
+    # Use provided quantity or default to remaining
+    contract_quantity = data.get('contract_quantity', remaining_qty)
+    if contract_quantity > remaining_qty:
+        return jsonify({'error': f'Cannot close {contract_quantity} contracts. Only {remaining_qty} contracts remaining open.'}), 400
+    
+    # Validate required fields
+    if not data.get('trade_price'):
+        return jsonify({'error': 'trade_price is required for Sell to Close'}), 400
+    
+    close_date = datetime.strptime(data.get('close_date', data.get('trade_date', datetime.now().date().isoformat())), '%Y-%m-%d').date()
+    trade_price = float(data['trade_price'])
+    fees = float(data.get('fees', 0))
+    
+    # Calculate premium (positive for selling)
+    premium = calculate_premium(trade_price, 'Sold to Close', contract_quantity, fees)
+    
+    # Check if this is a full close or partial close
+    total_closed = remaining_qty - contract_quantity
+    is_full_close = total_closed <= 0
+    
+    if is_full_close:
+        # FULL CLOSE: Update original trade directly (single-entry approach)
+        trade.status = 'Closed'
+        trade.close_date = close_date
+        trade.close_price = trade_price
+        trade.close_fees = fees
+        trade.close_premium = premium
+        trade.close_method = 'sell_to_close'
+        if data.get('notes'):
+            trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+        
+        if not trade.open_date:
+            trade.open_date = trade.trade_date
+        
+        db.session.commit()
+        return jsonify(trade.to_dict(include_realized_pnl=True)), 200
+    else:
+        # PARTIAL CLOSE: Create closing trade (two-entry approach for partial closes)
+        closing_trade = Trade(
+            account_id=trade.account_id,
+            symbol=trade.symbol,
+            trade_type=trade.trade_type,
+            position_type='Close',
+            strike_price=trade.strike_price,
+            expiration_date=trade.expiration_date,
+            contract_quantity=contract_quantity,
+            trade_price=trade_price,
+            trade_action='Sold to Close',
+            premium=premium,
+            fees=fees,
+            trade_date=close_date,
+            open_date=trade.trade_date,
+            close_date=close_date,
+            status='Closed',
+            parent_trade_id=trade.id,
+            notes=data.get('notes')
+        )
+        
+        db.session.add(closing_trade)
+        
+        # Update parent trade status (keep open for partial close)
+        trade.status = 'Open'
+        trade.close_date = None
+        
+        if not trade.open_date:
+            trade.open_date = trade.trade_date
+        
+        db.session.commit()
+        return jsonify(closing_trade.to_dict(include_realized_pnl=True)), 201
+
+def handle_expired(trade, data):
+    """Handle Expired (worthless) - supports partial and full closes"""
+    # Get remaining quantity
+    remaining_qty = trade.get_remaining_open_quantity()
+    if remaining_qty <= 0:
+        return jsonify({'error': 'No contracts remaining to expire'}), 400
+    
+    # Use provided quantity or default to remaining
+    contract_quantity = data.get('contract_quantity', remaining_qty)
+    if contract_quantity > remaining_qty:
+        return jsonify({'error': f'Cannot expire {contract_quantity} contracts. Only {remaining_qty} contracts remaining open.'}), 400
+    
+    close_date = datetime.strptime(
+        data.get('close_date', trade.expiration_date.isoformat() if trade.expiration_date else datetime.now().date().isoformat()),
+        '%Y-%m-%d'
+    ).date()
+    
+    # Check if this is a full close or partial close
+    total_closed = remaining_qty - contract_quantity
+    is_full_close = total_closed <= 0
+    
+    if is_full_close:
+        # FULL CLOSE: Update original trade directly (single-entry approach)
+        trade.status = 'Expired'
+        trade.close_date = close_date
+        trade.close_price = None  # No price for expired
+        trade.close_fees = 0
+        trade.close_premium = 0  # Expired worthless, no closing premium
+        trade.close_method = 'expired'
+        
+        if not trade.open_date:
+            trade.open_date = trade.trade_date
+        
+        if data.get('notes'):
+            trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+        
+        db.session.commit()
+        return jsonify(trade.to_dict(include_realized_pnl=True)), 200
+    else:
+        # PARTIAL CLOSE: Create closing trade entry (two-entry approach for partial closes)
+        # For expired trades, we create a closing trade with the same trade_action as the parent
+        # but with status='Expired' to track the partial expiration
+        closing_trade = Trade(
+            account_id=trade.account_id,
+            symbol=trade.symbol,
+            trade_type=trade.trade_type,
+            position_type='Close',
+            strike_price=trade.strike_price,
+            expiration_date=trade.expiration_date,
+            contract_quantity=contract_quantity,
+            trade_price=None,  # No price for expired
+            trade_action=trade.trade_action,  # Keep same action as parent (e.g., 'Sold to Open')
+            premium=0,  # Expired worthless, no closing premium
+            fees=0,
+            trade_date=close_date,
+            open_date=trade.trade_date,
+            close_date=close_date,
+            status='Expired',
+            parent_trade_id=trade.id,
+            close_method='expired',
+            notes=data.get('notes')
+        )
+        
+        db.session.add(closing_trade)
+        
+        # Update parent trade status (keep open for partial close)
+        trade.status = 'Open'
+        trade.close_date = None
+        
+        if not trade.open_date:
+            trade.open_date = trade.trade_date
+        
+        db.session.commit()
+        return jsonify(closing_trade.to_dict(include_realized_pnl=True)), 201
+
+def handle_assigned(trade, data):
+    """Handle Assigned - creates assignment trade and stock position"""
+    if trade.trade_type != 'CSP':
+        return jsonify({'error': 'Assigned method is only for CSP trades'}), 400
+    
+    # Get remaining quantity
+    remaining_qty = trade.get_remaining_open_quantity()
+    if remaining_qty <= 0:
+        return jsonify({'error': 'No contracts remaining to assign'}), 400
+    
+    # Use provided quantity or default to remaining
+    contract_quantity = data.get('contract_quantity', remaining_qty)
+    if contract_quantity > remaining_qty:
+        return jsonify({'error': f'Cannot assign {contract_quantity} contracts. Only {remaining_qty} contracts remaining open.'}), 400
+    
+    assignment_date = datetime.strptime(
+        data.get('close_date', trade.expiration_date.isoformat() if trade.expiration_date else datetime.now().date().isoformat()),
+        '%Y-%m-%d'
+    ).date()
+    
+    assignment_price = float(data.get('assignment_price', trade.strike_price)) if data.get('assignment_price') or trade.strike_price else None
+    if not assignment_price:
+        return jsonify({'error': 'assignment_price is required'}), 400
+    
+    # Create assignment trade
+    assignment_trade = Trade(
+        account_id=trade.account_id,
+        symbol=trade.symbol,
+        trade_type='Assignment',
+        position_type='Assignment',
+        strike_price=trade.strike_price,
+        expiration_date=trade.expiration_date,
+        contract_quantity=contract_quantity,
+        assignment_price=assignment_price,
+        trade_date=assignment_date,
+        open_date=trade.trade_date,
+        status='Assigned',
+        parent_trade_id=trade.id,
+        notes=data.get('notes')
+    )
+    
+    db.session.add(assignment_trade)
+    
+    # Update parent CSP
+    total_assigned = remaining_qty - contract_quantity
+    is_full_assignment = total_assigned <= 0
+    
+    if is_full_assignment:
+        # FULL ASSIGNMENT: Update original CSP directly (single-entry approach)
+        trade.status = 'Assigned'
+        trade.close_date = assignment_date
+        trade.assignment_price = assignment_price
+        trade.close_method = 'assigned'
+        if data.get('notes'):
+            trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+    else:
+        # PARTIAL ASSIGNMENT: Keep parent open, create assignment trade
+        trade.status = 'Open'
+        trade.close_date = None
+        trade.assignment_price = assignment_price
+    
+    if not trade.open_date:
+        trade.open_date = trade.trade_date
+    
+    # Always create assignment trade for stock position tracking (even for full assignments)
+    # This ensures we have a record of the assignment event and can link stock positions
+    # But the original CSP is also updated to show it's assigned
+    
+    # Auto-create stock position from assignment
+    shares = contract_quantity * 100
+    if shares > 0 and assignment_price > 0:
+        stock_position = StockPosition(
+            account_id=trade.account_id,
+            symbol=trade.symbol,
+            shares=shares,
+            cost_basis_per_share=assignment_price,
+            acquired_date=assignment_date,
+            status='Open',
+            source_trade_id=assignment_trade.id,
+            notes=f'Assigned from CSP trade #{trade.id}'
+        )
+        db.session.add(stock_position)
+    
+    db.session.commit()
+    return jsonify(assignment_trade.to_dict(include_realized_pnl=True)), 201
+
+def handle_exercise(trade, data):
+    """Handle Exercise for LEAPS - creates stock position"""
+    if trade.trade_type != 'LEAPS':
+        return jsonify({'error': 'Exercise method is only for LEAPS trades'}), 400
+    
+    if trade.trade_action != 'Bought to Open':
+        return jsonify({'error': 'Exercise is only for LEAPS opened with "Bought to Open"'}), 400
+    
+    # Get remaining quantity
+    remaining_qty = trade.get_remaining_open_quantity()
+    if remaining_qty <= 0:
+        return jsonify({'error': 'No contracts remaining to exercise'}), 400
+    
+    # Use provided quantity or default to remaining
+    contract_quantity = data.get('contract_quantity', remaining_qty)
+    if contract_quantity > remaining_qty:
+        return jsonify({'error': f'Cannot exercise {contract_quantity} contracts. Only {remaining_qty} contracts remaining open.'}), 400
+    
+    exercise_date = datetime.strptime(
+        data.get('close_date', trade.expiration_date.isoformat() if trade.expiration_date else datetime.now().date().isoformat()),
+        '%Y-%m-%d'
+    ).date()
+    
+    # Exercise price is the strike price
+    exercise_price = float(trade.strike_price) if trade.strike_price else None
+    if not exercise_price:
+        return jsonify({'error': 'Strike price is required for exercise'}), 400
+    
+    # Update LEAPS trade to closed (exercised)
+    total_exercised = remaining_qty - contract_quantity
+    is_full_exercise = total_exercised <= 0
+    
+    if is_full_exercise:
+        # FULL EXERCISE: Update original LEAPS directly (single-entry approach)
+        trade.status = 'Closed'
+        trade.close_date = exercise_date
+        trade.close_price = exercise_price  # Strike price is the exercise price
+        trade.close_fees = 0
+        trade.close_premium = 0  # No premium for exercise
+        trade.close_method = 'exercise'
+        if data.get('notes'):
+            trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+    else:
+        # PARTIAL EXERCISE: Keep remaining open
+        trade.status = 'Open'
+        trade.close_date = None
+    
+    if not trade.open_date:
+        trade.open_date = trade.trade_date
+    
+    # Auto-create stock position from exercise
+    shares = contract_quantity * 100
+    if shares > 0 and exercise_price > 0:
+        # Cost basis = strike price (exercise price)
+        # Note: The premium paid for LEAPS is a loss when exercised
+        stock_position = StockPosition(
+            account_id=trade.account_id,
+            symbol=trade.symbol,
+            shares=shares,
+            cost_basis_per_share=exercise_price,
+            acquired_date=exercise_date,
+            status='Open',
+            source_trade_id=trade.id,
+            notes=f'Exercised from LEAPS trade #{trade.id}'
+        )
+        db.session.add(stock_position)
+    
+    if data.get('notes'):
+        trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+    
+    db.session.commit()
+    return jsonify(trade.to_dict(include_realized_pnl=True)), 200
 
