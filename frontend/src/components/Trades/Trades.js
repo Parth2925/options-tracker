@@ -912,6 +912,7 @@ function Trades() {
         {closingTrade && (
           <CloseTradeDialog
             trade={closingTrade}
+            accounts={accounts}
             onSuccess={() => {
               setClosingTrade(null);
               loadTrades();

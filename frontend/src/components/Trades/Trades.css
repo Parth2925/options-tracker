@@ -77,26 +77,42 @@
 /* Table wrapper for proper alignment - ensure it matches card width */
 .card .table-wrapper {
   width: 100%;
-  overflow-x: auto;
+  max-width: 100%; /* Ensure it doesn't exceed card width */
+  overflow-x: auto; /* Allow horizontal scrolling if table is wider than card */
+  overflow-y: visible;
   -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
+  position: relative;
+  margin: 0; /* Remove any margins that could cause overflow */
+  padding: 0; /* Remove any padding that could cause overflow */
 }
 
 .card .table-wrapper table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: auto;
+  table-layout: auto; /* Let table size itself naturally */
+  min-width: 100%; /* Ensure table is at least as wide as container */
 }
 
 /* Ensure table is scrollable on mobile */
 @media (max-width: 768px) {
+  .card {
+    overflow-x: visible; /* Allow horizontal scrolling */
+    overflow-y: visible;
+    padding: 15px; /* Ensure consistent padding on mobile */
+  }
+  
   .card .table-wrapper {
-    margin: 0 -15px;
-    padding: 0 15px;
+    margin: 0 -15px; /* Negative margin to extend to card edges */
+    padding: 0 15px; /* Padding to compensate for negative margin */
+    overflow-x: auto; /* Explicitly allow horizontal scroll */
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    width: calc(100% + 30px); /* Compensate for negative margin */
   }
   
   .card .table-wrapper table {
     min-width: 800px; /* Ensure table doesn't get too compressed */
+    width: auto; /* Let table determine its width */
   }
 }
 
@@ -173,7 +189,7 @@ table td:last-child {
 .card {
   width: 100%;
   box-sizing: border-box;
-  overflow: hidden; /* Prevent content from overflowing */
+  /* Don't use overflow: hidden - it prevents horizontal scrolling on tables */
 }
 
 @media (max-width: 768px) {

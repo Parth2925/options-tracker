@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import { useToast } from '../../contexts/ToastContext';
 
-function CloseTradeDialog({ trade, onSuccess, onCancel }) {
+function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [dragStartPos, setDragStartPos] = useState(null);
@@ -43,6 +43,13 @@ function CloseTradeDialog({ trade, onSuccess, onCancel }) {
     setDragStartTarget(null);
   };
   
+  // Get account's default fee
+  const getAccountDefaultFee = () => {
+    if (!accounts || !trade.account_id) return 0;
+    const account = accounts.find(acc => acc.id === trade.account_id);
+    return account?.default_fee || 0;
+  };
+
   const [formData, setFormData] = useState({
     close_method: '',
     close_date: trade.expiration_date ? trade.expiration_date.split('T')[0] : new Date().toISOString().split('T')[0],
@@ -74,10 +81,27 @@ function CloseTradeDialog({ trade, onSuccess, onCancel }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [name]: value
+      };
+      
+      // Auto-populate default fee when close_method changes to buy_to_close or sell_to_close
+      if (name === 'close_method' && (value === 'buy_to_close' || value === 'sell_to_close')) {
+        const defaultFee = getAccountDefaultFee();
+        // Only set if fees field is currently empty (allows user override)
+        if (!prev.fees || prev.fees === '') {
+          updated.fees = defaultFee > 0 ? defaultFee.toString() : '';
+        }
+      }
+      // Clear fees if close_method changes to something that doesn't have fees
+      else if (name === 'close_method' && value !== 'buy_to_close' && value !== 'sell_to_close') {
+        updated.fees = '';
+      }
+      
+      return updated;
+    });
     
     // Clear field error when user starts typing
     if (fieldErrors[name]) {
@@ -306,9 +330,14 @@ function CloseTradeDialog({ trade, onSuccess, onCancel }) {
                       name="fees"
                       value={formData.fees}
                       onChange={handleChange}
-                      placeholder="0.00"
+                      placeholder={getAccountDefaultFee() > 0 ? `${getAccountDefaultFee()}` : "0.00"}
                       className={fieldErrors.fees ? 'error-field' : ''}
                     />
+                    {getAccountDefaultFee() > 0 && (
+                      <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                        Default fee: ${getAccountDefaultFee()} per contract
+                      </small>
+                    )}
                     {fieldErrors.fees && (
                       <div className="field-error">{fieldErrors.fees}</div>
                     )}
