@@ -696,14 +696,21 @@ table td {
     font-size: 12px;
   }
 
-  /* Make tables horizontally scrollable on mobile */
-  .card {
-    overflow-x: visible; /* Allow horizontal scrolling */
+  /* Make tables horizontally scrollable on mobile - only for cards with tables, not filters */
+  .card:not(.filters-card) {
+    overflow-x: hidden; /* Prevent card itself from scrolling */
     overflow-y: visible;
     padding: 15px; /* Ensure consistent padding */
   }
   
-  .card .table-wrapper {
+  /* Filters card should not scroll horizontally */
+  .card.filters-card {
+    overflow-x: hidden;
+    overflow-y: visible;
+    padding: 15px;
+  }
+  
+  .card:not(.filters-card) .table-wrapper {
     overflow-x: auto !important; /* Force horizontal scrolling */
     overflow-y: visible;
     -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
@@ -712,7 +719,7 @@ table td {
     width: calc(100% + 30px); /* Compensate for negative margin */
   }
 
-  .card .table-wrapper table {
+  .card:not(.filters-card) .table-wrapper table {
     min-width: 600px; /* Ensure table doesn't get too compressed */
     width: auto; /* Let table determine its width */
   }
@@ -752,9 +759,15 @@ table td {
     padding: 8px;
   }
 
-  .card {
+  .card:not(.filters-card) {
     padding: 12px;
-    overflow-x: visible; /* Allow horizontal scrolling */
+    overflow-x: hidden; /* Prevent card itself from scrolling */
+    overflow-y: visible;
+  }
+  
+  .card.filters-card {
+    padding: 12px;
+    overflow-x: hidden;
     overflow-y: visible;
   }
 
@@ -764,7 +777,7 @@ table td {
     font-size: 11px;
   }
   
-  .card .table-wrapper {
+  .card:not(.filters-card) .table-wrapper {
     overflow-x: auto !important; /* Force horizontal scrolling */
     overflow-y: visible;
     -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
@@ -773,7 +786,7 @@ table td {
     width: calc(100% + 24px); /* Compensate for negative margin */
   }
   
-  .card .table-wrapper table {
+  .card:not(.filters-card) .table-wrapper table {
     min-width: 500px;
     width: auto; /* Let table determine its width */
   }

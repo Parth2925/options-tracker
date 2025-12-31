@@ -96,13 +96,22 @@
 
 /* Ensure table is scrollable on mobile */
 @media (max-width: 768px) {
-  .card {
-    overflow-x: visible; /* Allow horizontal scrolling */
+  /* Only apply scrolling behavior to cards with table-wrapper, not filters-card */
+  .card:not(.filters-card) {
+    overflow-x: hidden; /* Prevent card itself from scrolling */
     overflow-y: visible;
     padding: 15px; /* Ensure consistent padding on mobile */
   }
   
-  .card .table-wrapper {
+  /* Filters card should not scroll horizontally */
+  .card.filters-card {
+    overflow-x: hidden;
+    overflow-y: visible;
+    padding: 15px;
+  }
+  
+  /* Only the table-wrapper should scroll horizontally */
+  .card:not(.filters-card) .table-wrapper {
     margin: 0 -15px; /* Negative margin to extend to card edges */
     padding: 0 15px; /* Padding to compensate for negative margin */
     overflow-x: auto; /* Explicitly allow horizontal scroll */
@@ -110,7 +119,7 @@
     width: calc(100% + 30px); /* Compensate for negative margin */
   }
   
-  .card .table-wrapper table {
+  .card:not(.filters-card) .table-wrapper table {
     min-width: 800px; /* Ensure table doesn't get too compressed */
     width: auto; /* Let table determine its width */
   }
