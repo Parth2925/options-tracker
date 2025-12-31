@@ -86,6 +86,13 @@
   margin-top: 20px;
 }
 
+.release-history-note {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-bottom: 15px;
+  font-style: italic;
+}
+
 .release-item {
   background: var(--bg-tertiary);
   border-left: 4px solid #007bff;

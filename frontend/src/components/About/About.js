@@ -96,11 +96,12 @@ function About() {
             </div>
           )}
 
-          {allReleaseNotes.length > 0 && (
+          {allReleaseNotes.length > 1 && (
             <div className="about-section">
-              <h2>Release History</h2>
+              <h2>Recent Release History</h2>
+              <p className="release-history-note">Showing the last 2 versions. Current version details are shown above.</p>
               <div className="release-history">
-                {allReleaseNotes.map((release, index) => (
+                {allReleaseNotes.slice(1, 3).map((release, index) => (
                   <div key={release.version} className="release-item">
                     <div className="release-header">
                       <h3>Version {release.version}</h3>
