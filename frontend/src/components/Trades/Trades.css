@@ -74,7 +74,110 @@
   flex-wrap: wrap;
 }
 
+/* Table wrapper for proper alignment - ensure it matches card width */
+.card .table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+}
+
+.card .table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+/* Ensure table is scrollable on mobile */
 @media (max-width: 768px) {
+  .card .table-wrapper {
+    margin: 0 -15px;
+    padding: 0 15px;
+  }
+  
+  .card .table-wrapper table {
+    min-width: 800px; /* Ensure table doesn't get too compressed */
+  }
+}
+
+/* Actions column styling */
+table td:last-child {
+  min-width: 180px;
+  white-space: nowrap;
+}
+
+.trade-actions-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.trade-actions-primary {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.trade-actions-secondary {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.trade-action-button {
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  min-width: 50px !important;
+  flex-shrink: 0;
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  padding: 15px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.pagination-info {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pagination-pages {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Ensure all cards have consistent width and alignment */
+.card {
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden; /* Prevent content from overflowing */
+}
+
+@media (max-width: 768px) {
+  /* Header actions stack on mobile */
   .trades-header-actions {
     flex-direction: column;
     align-items: stretch;
@@ -87,6 +190,47 @@
 
   .trades-header-buttons button {
     width: 100%;
+  }
+  
+  /* Pagination stacks on mobile */
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .pagination-controls {
+    justify-content: center;
+    width: 100%;
+  }
+  
+  .pagination-info {
+    text-align: center;
+    width: 100%;
+  }
+  
+  /* Actions column adjustments for mobile */
+  table td:last-child {
+    min-width: 100px;
+  }
+  
+  table td:last-child > div {
+    flex-wrap: wrap;
+  }
+  
+  .trade-actions-cell {
+    align-items: stretch;
+  }
+  
+  .trade-actions-primary,
+  .trade-actions-secondary {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  
+  .trade-action-button {
+    padding: 6px 10px !important;
+    font-size: 10px !important;
+    min-width: 45px !important;
   }
 }
 

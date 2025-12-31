@@ -8,8 +8,8 @@ function Footer() {
       <div className="footer-content">
         <div className="footer-links">
           <Link to="/about">About</Link>
+          <Link to="/how-to-use">How to Use</Link>
           {/* Future links can be added here:
-          <Link to="/guide">Guide</Link>
           <Link to="/contact">Contact</Link>
           <Link to="/feedback">Feedback</Link>
           */}

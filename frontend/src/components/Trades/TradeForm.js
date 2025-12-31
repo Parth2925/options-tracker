@@ -28,6 +28,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
     close_date: '',
     status: 'Open',
     parent_trade_id: '',
+    stock_position_id: '',
     notes: '',
   });
   const [calculatedPremium, setCalculatedPremium] = useState(0);
@@ -36,6 +37,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [stockPositions, setStockPositions] = useState([]);
   
   // Filter available parent trades based on trade type and action
   const getAvailableParentTrades = () => {
@@ -116,6 +118,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
         close_date: parseDateString(trade.close_date),
         status: trade.status || 'Open',
         parent_trade_id: trade.parent_trade_id || '',
+        stock_position_id: trade.stock_position_id || '',
         notes: trade.notes || '',
       });
       if (trade.trade_price && trade.trade_action) {
@@ -309,6 +312,11 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
       errors.trade_action = 'Please select a trade action';
     }
     
+    // Stock position is required for Covered Call trades
+    if (formData.trade_type === 'Covered Call' && !formData.stock_position_id) {
+      errors.stock_position_id = 'Please select a stock position';
+    }
+    
     // Trade price is required for non-Assignment trades
     if (formData.trade_type !== 'Assignment') {
       if (!formData.trade_price || formData.trade_price === '') {
@@ -432,6 +440,7 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
         close_date: formData.close_date || null,
         open_date: formData.open_date || null,
         parent_trade_id: formData.parent_trade_id ? parseInt(formData.parent_trade_id) : null,
+        stock_position_id: formData.stock_position_id ? parseInt(formData.stock_position_id) : null,
         // Ensure status is 'Assigned' for Assignment trades
         status: formData.trade_type === 'Assignment' ? 'Assigned' : formData.status,
       };
@@ -548,19 +557,48 @@ function TradeForm({ accounts, trade, trades, onSuccess, onCancel }) {
             </div>
           )}
 
-          {(formData.trade_action === 'Bought to Close' || 
-            formData.trade_action === 'Sold to Close' || 
-            formData.trade_type === 'Assignment' || 
-            formData.trade_type === 'Covered Call') && (
+          {formData.trade_type === 'Covered Call' && (
             <div className="form-group">
               <label>
-                Parent Trade (Link to existing trade)
-                {formData.trade_action === 'Bought to Close' || formData.trade_action === 'Sold to Close' || formData.trade_type === 'Assignment' ? ' *' : ' (Optional)'}
-                {formData.trade_type === 'Covered Call' && (
-                  <span style={{ fontSize: '0.85em', color: 'var(--text-secondary)', display: 'block', marginTop: '4px', fontWeight: 'normal' }}>
-                    Link to Assignment trade if stock came from an assigned CSP, or leave empty if you own the stock from elsewhere
-                  </span>
+                Stock Position * 
+                <span style={{ fontSize: '0.85em', color: 'var(--text-secondary)', display: 'block', marginTop: '4px', fontWeight: 'normal' }}>
+                  Select the stock position to use for this covered call
+                </span>
+              </label>
+              <select
+                name="stock_position_id"
+                value={formData.stock_position_id}
+                onChange={handleChange}
+                required
+                className={fieldErrors.stock_position_id ? 'error-field' : ''}
+              >
+                <option value="">Select Stock Position</option>
+                {stockPositions.length === 0 ? (
+                  <option value="" disabled>
+                    {formData.account_id && formData.symbol
+                      ? 'No available stock positions. Create a stock position first or ensure you have available shares.'
+                      : 'Select account and symbol first'}
+                  </option>
+                ) : (
+                  stockPositions.map((sp) => (
+                    <option key={sp.id} value={sp.id}>
+                      {sp.symbol} - {sp.available_shares || sp.shares} shares available @ ${sp.cost_basis_per_share?.toFixed(2) || '0.00'} cost basis
+                    </option>
+                  ))
                 )}
+              </select>
+              {fieldErrors.stock_position_id && (
+                <div className="field-error">{fieldErrors.stock_position_id}</div>
+              )}
+            </div>
+          )}
+
+          {(formData.trade_action === 'Bought to Close' || 
+            formData.trade_action === 'Sold to Close' || 
+            formData.trade_type === 'Assignment') && (
+            <div className="form-group">
+              <label>
+                Parent Trade (Link to existing trade) *
               </label>
               <select
                 name="parent_trade_id"

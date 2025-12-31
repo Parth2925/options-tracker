@@ -1,0 +1,283 @@
+.guide-intro {
+  color: var(--text-secondary);
+  font-size: 16px;
+  margin-bottom: 30px;
+  line-height: 1.6;
+}
+
+.guide-sections {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.guide-section {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px var(--shadow);
+  overflow: hidden;
+  transition: box-shadow 0.3s ease;
+}
+
+.guide-section:hover {
+  box-shadow: 0 4px 8px var(--shadow);
+}
+
+.guide-section-header {
+  width: 100%;
+  padding: 20px 24px;
+  background: var(--bg-secondary);
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: background-color 0.2s ease;
+}
+
+.guide-section-header:hover {
+  background-color: var(--hover-bg);
+}
+
+.guide-section.expanded .guide-section-header {
+  border-bottom: 2px solid var(--border-color);
+}
+
+.guide-section-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.guide-section-title {
+  flex: 1;
+}
+
+.guide-section-arrow {
+  font-size: 14px;
+  color: var(--text-secondary);
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+}
+
+.guide-section.expanded .guide-section-arrow {
+  transform: rotate(90deg);
+}
+
+.guide-section-content {
+  padding: 24px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.guide-content {
+  color: var(--text-primary);
+}
+
+.guide-content h3 {
+  color: var(--text-primary);
+  font-size: 22px;
+  margin-bottom: 20px;
+  margin-top: 0;
+}
+
+.guide-content h4 {
+  color: var(--text-primary);
+  font-size: 18px;
+  margin-top: 25px;
+  margin-bottom: 15px;
+}
+
+.guide-content h5 {
+  color: var(--text-primary);
+  font-size: 16px;
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
+
+.guide-content p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 15px;
+}
+
+.step-section {
+  margin-bottom: 30px;
+  padding: 20px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  border-left: 4px solid #007bff;
+}
+
+.step-section:last-child {
+  margin-bottom: 0;
+}
+
+.step-section ol,
+.step-section ul {
+  margin-left: 20px;
+  margin-top: 10px;
+  margin-bottom: 15px;
+}
+
+.step-section li {
+  color: var(--text-secondary);
+  line-height: 1.8;
+  margin-bottom: 8px;
+}
+
+.step-section li strong {
+  color: var(--text-primary);
+}
+
+.step-section ul {
+  list-style-type: disc;
+}
+
+.step-section ol {
+  list-style-type: decimal;
+}
+
+.step-section ul ul {
+  list-style-type: circle;
+  margin-left: 30px;
+  margin-top: 5px;
+}
+
+.sub-step {
+  margin-top: 20px;
+  padding: 15px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.sub-step h5 {
+  margin-top: 0;
+  color: #007bff;
+}
+
+.tip-box {
+  background: #e7f3ff;
+  border-left: 4px solid #007bff;
+  padding: 15px;
+  margin-top: 15px;
+  border-radius: 4px;
+}
+
+.dark-mode .tip-box {
+  background: #1a3a5c;
+  border-left-color: #4da3ff;
+}
+
+.tip-box strong {
+  color: var(--text-primary);
+}
+
+.tip-box ul {
+  margin-left: 20px;
+  margin-top: 10px;
+}
+
+.tip-box li {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.warning-box {
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+  padding: 15px;
+  margin-top: 15px;
+  border-radius: 4px;
+}
+
+.dark-mode .warning-box {
+  background: #4a3a1a;
+  border-left-color: #ffd54f;
+}
+
+.warning-box strong {
+  color: var(--text-primary);
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .guide-section-header {
+    padding: 16px 20px;
+    font-size: 16px;
+  }
+
+  .guide-section-icon {
+    font-size: 20px;
+  }
+
+  .guide-section-content {
+    padding: 20px;
+  }
+
+  .guide-content h3 {
+    font-size: 20px;
+  }
+
+  .guide-content h4 {
+    font-size: 16px;
+  }
+
+  .guide-content h5 {
+    font-size: 14px;
+  }
+
+  .step-section {
+    padding: 15px;
+  }
+
+  .sub-step {
+    padding: 12px;
+  }
+
+  .tip-box,
+  .warning-box {
+    padding: 12px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .guide-section-header {
+    padding: 14px 16px;
+    font-size: 15px;
+    gap: 10px;
+  }
+
+  .guide-section-icon {
+    font-size: 18px;
+  }
+
+  .guide-section-content {
+    padding: 16px;
+  }
+
+  .step-section {
+    padding: 12px;
+  }
+
+  .step-section ol,
+  .step-section ul {
+    margin-left: 15px;
+  }
+}
+

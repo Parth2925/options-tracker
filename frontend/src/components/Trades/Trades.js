@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Navbar from '../Layout/Navbar';
 import Footer from '../Layout/Footer';
 import api, { API_BASE_URL } from '../../utils/api';
-import TradeForm from './TradeForm';
+import TradeFormDialog from './TradeFormDialog';
+import CloseTradeDialog from './CloseTradeDialog';
+import HistoryDialog from './HistoryDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import './Trades.css';
@@ -11,13 +12,15 @@ import './Trades.css';
 function Trades() {
   const { showToast } = useToast();
   const { isDarkMode } = useTheme();
-  const navigate = useNavigate();
   const [trades, setTrades] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [stockPositions, setStockPositions] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('all');
-  const [showForm, setShowForm] = useState(false);
   const [editingTrade, setEditingTrade] = useState(null);
+  const [showTradeForm, setShowTradeForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [closingTrade, setClosingTrade] = useState(null);
+  const [historyTrade, setHistoryTrade] = useState(null);
   const [loading, setLoading] = useState(true);
   
   // Search and filter state
@@ -28,6 +31,10 @@ function Trades() {
   // Sorting state
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [companyLogos, setCompanyLogos] = useState({});
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const tradesPerPage = 50;
 
   const loadAccounts = async () => {
     try {
@@ -35,6 +42,16 @@ function Trades() {
       setAccounts(response.data);
     } catch (error) {
       console.error('Error loading accounts:', error);
+    }
+  };
+
+  const loadStockPositions = async () => {
+    try {
+      const response = await api.get('/stock-positions');
+      setStockPositions(response.data || []);
+    } catch (error) {
+      console.error('Error loading stock positions:', error);
+      setStockPositions([]);
     }
   };
 
@@ -82,6 +99,7 @@ function Trades() {
 
   useEffect(() => {
     loadAccounts();
+    loadStockPositions();
   }, []);
 
   useEffect(() => {
@@ -90,20 +108,23 @@ function Trades() {
     }
   }, [selectedAccount, accounts, loadTrades]);
 
-  const handleTradeCreated = () => {
-    setShowForm(false);
-    setEditingTrade(null);
-    loadTrades();
-    showToast(editingTrade ? 'Trade updated successfully!' : 'Trade created successfully!', 'success');
-  };
+  // Removed handleTradeCreated - now handled by handleTradeFormSuccess
 
   const handleEdit = (trade) => {
-    navigate(`/trades/${trade.id}/edit`);
+    setEditingTrade(trade);
+    setShowTradeForm(true);
   };
 
-  const handleCancel = () => {
-    setShowForm(false);
+  const handleTradeFormSuccess = () => {
     setEditingTrade(null);
+    setShowTradeForm(false);
+    loadTrades();
+    loadStockPositions(); // Reload stock positions in case shares were used
+  };
+
+  const handleTradeFormCancel = () => {
+    setEditingTrade(null);
+    setShowTradeForm(false);
   };
 
   const handleImport = async (e) => {
@@ -215,6 +236,24 @@ function Trades() {
 
     return filtered;
   }, [trades, searchTerm, statusFilter, tradeTypeFilter, sortConfig]);
+  
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredAndSortedTrades.length / tradesPerPage);
+  const startIndex = (currentPage - 1) * tradesPerPage;
+  const endIndex = startIndex + tradesPerPage;
+  const paginatedTrades = filteredAndSortedTrades.slice(startIndex, endIndex);
+  
+  // Reset to page 1 if current page is out of bounds
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
+  
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, tradeTypeFilter]);
 
   // Get unique trade types for filter
   const uniqueTradeTypes = useMemo(() => {
@@ -226,9 +265,9 @@ function Trades() {
     <div className="page-wrapper">
       <Navbar />
       <div className="container">
-        <div className="trades-header-actions">
+        <div className="page-header">
           <h1>Trades</h1>
-          <div className="trades-header-buttons">
+          <div className="page-header-actions">
             <button 
               className="btn btn-secondary" 
               onClick={async () => {
@@ -239,16 +278,36 @@ function Trades() {
                     params.append('account_id', selectedAccount);
                   }
                   params.append('format', 'csv');
-                  const response = await fetch(`${API_BASE_URL}/trades/export?${params.toString()}`, {
+                  const url = `${API_BASE_URL}/trades/export?${params.toString()}`;
+                  const response = await fetch(url, {
                     headers: {
                       'Authorization': `Bearer ${token}`
                     }
                   });
-                  if (!response.ok) throw new Error('Export failed');
+                  if (!response.ok) {
+                    let errorMessage = 'Export failed';
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                      try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorMessage;
+                      } catch (e) {
+                        errorMessage = 'Failed to parse error response';
+                      }
+                    } else {
+                      try {
+                        const errorText = await response.text();
+                        errorMessage = errorText || errorMessage;
+                      } catch (e) {
+                        errorMessage = `Export failed (Status: ${response.status})`;
+                      }
+                    }
+                    throw new Error(errorMessage);
+                  }
                   const blob = await response.blob();
-                  const url = window.URL.createObjectURL(blob);
+                  const blobUrl = window.URL.createObjectURL(blob);
                   const a = document.createElement('a');
-                  a.href = url;
+                  a.href = blobUrl;
                   const contentDisposition = response.headers.get('Content-Disposition');
                   const filename = contentDisposition 
                     ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') 
@@ -256,11 +315,11 @@ function Trades() {
                   a.download = filename;
                   document.body.appendChild(a);
                   a.click();
-                  window.URL.revokeObjectURL(url);
+                  window.URL.revokeObjectURL(blobUrl);
                   document.body.removeChild(a);
                   showToast('Trades exported successfully!', 'success');
                 } catch (error) {
-                  showToast(error.response?.data?.error || 'Export failed', 'error');
+                  showToast(error.message || 'Export failed', 'error');
                 }
               }}
               style={{ marginRight: '10px' }}
@@ -277,16 +336,36 @@ function Trades() {
                     params.append('account_id', selectedAccount);
                   }
                   params.append('format', 'xlsx');
-                  const response = await fetch(`${API_BASE_URL}/trades/export?${params.toString()}`, {
+                  const url = `${API_BASE_URL}/trades/export?${params.toString()}`;
+                  const response = await fetch(url, {
                     headers: {
                       'Authorization': `Bearer ${token}`
                     }
                   });
-                  if (!response.ok) throw new Error('Export failed');
+                  if (!response.ok) {
+                    let errorMessage = 'Export failed';
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                      try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorMessage;
+                      } catch (e) {
+                        errorMessage = 'Failed to parse error response';
+                      }
+                    } else {
+                      try {
+                        const errorText = await response.text();
+                        errorMessage = errorText || errorMessage;
+                      } catch (e) {
+                        errorMessage = `Export failed (Status: ${response.status})`;
+                      }
+                    }
+                    throw new Error(errorMessage);
+                  }
                   const blob = await response.blob();
-                  const url = window.URL.createObjectURL(blob);
+                  const blobUrl = window.URL.createObjectURL(blob);
                   const a = document.createElement('a');
-                  a.href = url;
+                  a.href = blobUrl;
                   const contentDisposition = response.headers.get('Content-Disposition');
                   const filename = contentDisposition 
                     ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') 
@@ -294,11 +373,11 @@ function Trades() {
                   a.download = filename;
                   document.body.appendChild(a);
                   a.click();
-                  window.URL.revokeObjectURL(url);
+                  window.URL.revokeObjectURL(blobUrl);
                   document.body.removeChild(a);
                   showToast('Trades exported successfully!', 'success');
                 } catch (error) {
-                  showToast(error.response?.data?.error || 'Export failed', 'error');
+                  showToast(error.message || 'Export failed', 'error');
                 }
               }}
               style={{ marginRight: '10px' }}
@@ -314,9 +393,9 @@ function Trades() {
             </button>
             <button className="btn btn-primary" onClick={() => {
               setEditingTrade(null);
-              setShowForm(!showForm);
+              setShowTradeForm(true);
             }}>
-              {showForm ? 'Cancel' : 'Add Trade'}
+              Add Trade
             </button>
           </div>
         </div>
@@ -356,13 +435,13 @@ function Trades() {
                     });
                     if (!response.ok) throw new Error('Download failed');
                     const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
+                    const blobUrl = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = url;
+                    a.href = blobUrl;
                     a.download = 'trades_template.csv';
                     document.body.appendChild(a);
                     a.click();
-                    window.URL.revokeObjectURL(url);
+                    window.URL.revokeObjectURL(blobUrl);
                     document.body.removeChild(a);
                     showToast('Template downloaded successfully', 'success');
                   } catch (error) {
@@ -384,13 +463,13 @@ function Trades() {
                     });
                     if (!response.ok) throw new Error('Download failed');
                     const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
+                    const blobUrl = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = url;
+                    a.href = blobUrl;
                     a.download = 'trades_template.xlsx';
                     document.body.appendChild(a);
                     a.click();
-                    window.URL.revokeObjectURL(url);
+                    window.URL.revokeObjectURL(blobUrl);
                     document.body.removeChild(a);
                     showToast('Template downloaded successfully', 'success');
                   } catch (error) {
@@ -434,19 +513,19 @@ function Trades() {
           </div>
         )}
 
-        {showForm && (
-          <TradeForm
-            accounts={accounts}
+        {showTradeForm && (
+          <TradeFormDialog
             trade={editingTrade}
-            trades={trades}
-            onSuccess={handleTradeCreated}
-            onCancel={handleCancel}
+            accounts={accounts}
+            stockPositions={stockPositions}
+            onSuccess={handleTradeFormSuccess}
+            onCancel={handleTradeFormCancel}
           />
         )}
 
         {/* Search and Filter Controls */}
-        <div className="card" style={{ marginBottom: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px' }}>
+        <div className="card filters-card">
+          <div className="filters-grid">
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Search</label>
               <input
@@ -589,20 +668,32 @@ function Trades() {
                     >
                       Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                     </th>
-                    <th>Actions</th>
+                    <th style={{ minWidth: '120px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAndSortedTrades.length === 0 ? (
                     <tr>
-                      <td colSpan="12" style={{ textAlign: 'center' }}>
-                        {trades.length === 0 
-                          ? 'No trades found. Add your first trade!' 
-                          : 'No trades match your search/filter criteria.'}
+                      <td colSpan="12" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                        <div className="empty-state">
+                          <div className="empty-state-icon">
+                            {trades.length === 0 ? '📈' : '🔍'}
+                          </div>
+                          <div className="empty-state-message">
+                            {trades.length === 0 
+                              ? 'No trades found' 
+                              : 'No trades match your search/filter criteria'}
+                          </div>
+                          <div className="empty-state-hint">
+                            {trades.length === 0 
+                              ? 'Add your first trade to get started!' 
+                              : 'Try adjusting your search or filter criteria'}
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   ) : (
-                    filteredAndSortedTrades.map((trade) => {
+                    paginatedTrades.map((trade) => {
                       // Determine if trade is closed/assigned for visual styling
                       const isClosed = trade.status === 'Closed' || trade.status === 'Assigned' || trade.status === 'Expired';
                       return (
@@ -678,23 +769,85 @@ function Trades() {
                         <span className={`status-badge status-${trade.status.toLowerCase()}`}>
                           {trade.status}
                         </span>
+                        {trade.remaining_open_quantity !== undefined && trade.remaining_open_quantity < trade.contract_quantity && (
+                          <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
+                            {trade.remaining_open_quantity} of {trade.contract_quantity} remaining
+                          </div>
+                        )}
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: '5px' }}>
+                        <div className="trade-actions-cell">
+                          <div className="trade-actions-primary">
+                            {(trade.status === 'Open' || trade.status === 'Assigned') && 
+                             (trade.trade_type === 'CSP' || trade.trade_type === 'Covered Call' || trade.trade_type === 'LEAPS') &&
+                             trade.trade_action && 
+                             (trade.trade_action === 'Sold to Open' || trade.trade_action === 'Bought to Open') && (
+                              <button
+                                className="btn btn-primary trade-action-button"
+                                onClick={() => setClosingTrade(trade)}
+                                title="Close trade"
+                              >
+                                Close
+                              </button>
+                            )}
+                            {trade.closing_trades && trade.closing_trades.length > 0 && (
+                              <button
+                                className="btn btn-secondary trade-action-button"
+                                onClick={() => setHistoryTrade(trade)}
+                                title="View close history"
+                              >
+                                History
+                              </button>
+                            )}
+                          </div>
+                          <div className="trade-actions-secondary">
                           <button
-                            className="btn btn-secondary"
-                            style={{ padding: '5px 10px', fontSize: '12px' }}
+                            style={{ 
+                              cursor: 'pointer', 
+                              fontSize: '14px',
+                              color: 'var(--text-secondary)',
+                              padding: '4px 6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '4px',
+                              transition: 'background-color 0.2s',
+                              border: 'none',
+                              background: 'transparent',
+                              minWidth: '28px',
+                              flexShrink: 0
+                            }}
                             onClick={() => handleEdit(trade)}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--hover-bg)'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                            title="Edit trade"
                           >
-                            Edit
+                            ✏️
                           </button>
                           <button
-                            className="btn btn-danger"
-                            style={{ padding: '5px 10px', fontSize: '12px' }}
+                            style={{ 
+                              cursor: 'pointer', 
+                              fontSize: '14px',
+                              color: '#dc3545',
+                              padding: '4px 6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: '4px',
+                              transition: 'background-color 0.2s',
+                              border: 'none',
+                              background: 'transparent',
+                              minWidth: '28px',
+                              flexShrink: 0
+                            }}
                             onClick={() => handleDelete(trade.id)}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--hover-bg)'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                            title="Delete trade"
                           >
-                            Delete
+                            🗑️
                           </button>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -703,8 +856,75 @@ function Trades() {
                   )}
               </tbody>
             </table>
+            
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="pagination">
+                <div className="pagination-info">
+                  Showing {startIndex + 1} to {Math.min(endIndex, filteredAndSortedTrades.length)} of {filteredAndSortedTrades.length} trades
+                </div>
+                <div className="pagination-controls">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    Previous
+                  </button>
+                  <div className="pagination-pages">
+                    {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 7) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 4) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 3) {
+                        pageNum = totalPages - 6 + i;
+                      } else {
+                        pageNum = currentPage - 3 + i;
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          className={`btn ${currentPage === pageNum ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => setCurrentPage(pageNum)}
+                          style={{ minWidth: '36px' }}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
             </div>
           </div>
+        )}
+
+        {closingTrade && (
+          <CloseTradeDialog
+            trade={closingTrade}
+            onSuccess={() => {
+              setClosingTrade(null);
+              loadTrades();
+            }}
+            onCancel={() => setClosingTrade(null)}
+          />
+        )}
+
+        {historyTrade && (
+          <HistoryDialog
+            trade={historyTrade}
+            onClose={() => setHistoryTrade(null)}
+          />
         )}
       </div>
       <Footer />

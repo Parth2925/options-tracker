@@ -75,7 +75,7 @@
   padding: 15px;
   border-radius: 6px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  text-align: center;
+  text-align: left;
 }
 
 .market-index-name {
@@ -201,6 +201,76 @@
 
   .summary-item {
     padding: 10px;
+  }
+}
+
+/* Position Details Table - No horizontal scrolling */
+.card .table-wrapper {
+  overflow-x: visible !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.card .table-wrapper table {
+  width: 100% !important;
+  table-layout: auto !important;
+  min-width: auto !important;
+}
+
+/* Position Details Table - Compact spacing for Contracts and Positions columns */
+.card .table-wrapper .position-details-table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  min-width: auto !important;
+}
+
+.card .table-wrapper .position-details-table th:nth-child(4) {
+  padding-right: 8px !important;
+}
+
+.card .table-wrapper .position-details-table th:nth-child(5),
+.card .table-wrapper .position-details-table td:nth-child(5) {
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  width: 12% !important;
+}
+
+.card .table-wrapper .position-details-table th:nth-child(6),
+.card .table-wrapper .position-details-table td:nth-child(6) {
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  width: 17% !important;
+}
+
+@media (max-width: 768px) {
+  .card .table-wrapper {
+    overflow-x: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  .card .table-wrapper table {
+    font-size: 12px !important;
+    min-width: auto !important;
+  }
+  
+  .card .table-wrapper table th,
+  .card .table-wrapper table td {
+    padding: 6px 4px !important;
+    font-size: 11px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .card .table-wrapper table {
+    font-size: 11px !important;
+    min-width: auto !important;
+  }
+  
+  .card .table-wrapper table th,
+  .card .table-wrapper table td {
+    padding: 5px 3px !important;
+    font-size: 10px !important;
   }
 }
 

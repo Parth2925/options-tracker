@@ -12,72 +12,72 @@ function Home() {
     {
       icon: '📊',
       title: 'Options Wheel Strategy Tracking',
-      description: 'Track the complete wheel cycle: Cash-Secured Puts → Assignment → Covered Calls. Automatically calculates P&L for each stage of the strategy.'
+      description: 'Track the complete wheel cycle: CSP → Assignment → Stock Position → Covered Calls. Auto-creates stock positions from assignments and exercises.'
     },
     {
       icon: '📈',
-      title: 'LEAPS Trading',
-      description: 'Track long-term equity anticipation securities with accurate P&L calculations for both opening and closing positions.'
+      title: 'LEAPS & Stock Positions',
+      description: 'Track LEAPS with exercise support. Manage stock positions separately with automatic creation from CSP assignments and LEAPS exercises.'
     },
     {
       icon: '💰',
       title: 'Real-Time P&L Calculations',
-      description: 'Get accurate realized and unrealized P&L calculations. Includes realized P&L in total capital calculations. Track your rate of return based on invested capital with time-based metrics (Days Held, Simple Return %, Annualized Return %).'
+      description: 'Accurate realized and unrealized P&L with time-based metrics (Days Held, Return %, Annualized Return %). Uses stock cost basis for covered calls.'
+    },
+    {
+      icon: '🔄',
+      title: 'Enhanced Close Workflow',
+      description: 'Context-aware close options for all trade types. Single-entry system for full closes. Track partial closes with detailed history.'
     },
     {
       icon: '📅',
       title: 'Monthly Returns & YTD',
-      description: 'View your monthly returns breakdown by amount and percentage with year-to-date summary. Track performance over time with detailed analytics.'
+      description: 'Monthly returns breakdown with year-to-date summary. Track performance over time with detailed analytics.'
     },
     {
       icon: '🏦',
       title: 'Multiple Account Support',
-      description: 'Manage multiple trading accounts (IRA, Taxable, Margin, etc.) with separate tracking and aggregated views. Track deposits and withdrawals for complete capital management.'
+      description: 'Manage multiple accounts with default fees, deposits, withdrawals, and aggregated views. Edit account names and balances.'
     },
     {
       icon: '📥',
       title: 'Easy Trade Entry & Export',
-      description: 'Enter trades manually or import from CSV/Excel files with comprehensive templates. Export all your trades to CSV/Excel for backup or re-import. Automatic premium calculation from trade price and contract quantity.'
+      description: 'Import/export CSV/Excel with backward compatibility. Automatic premium calculation. Edit closing details after trade closure.'
     },
     {
       icon: '📊',
       title: 'Portfolio Allocation',
-      description: 'Visualize your open positions with pie charts showing portfolio allocation by symbol and percentage. See capital at risk for each position with real-time spot prices.'
+      description: 'Visualize positions with pie charts and allocation percentages. See capital at risk with real-time spot prices and company logos.'
     },
     {
       icon: '📰',
       title: 'Market Data Integration',
-      description: 'View delayed market prices for your open positions and major indices (DJIA, S&P 500, NASDAQ, VIX) with CNBC-style color-coded displays showing daily performance.'
+      description: 'Real-time prices for positions and major indices (DJIA, S&P 500, NASDAQ, VIX) with color-coded daily performance.'
     },
     {
       icon: '✏️',
       title: 'Full Trade Management',
-      description: 'Edit trades, perform partial closes, track assignments, and manage the complete lifecycle of your options positions. Sortable and searchable tables for easy navigation.'
+      description: 'Edit trades and closing details. Partial closes with history tracking. Sortable, searchable tables with pagination.'
     },
     {
       icon: '🔧',
       title: 'VIX Cash Allocation Calculator',
-      description: 'Professional trading tool that recommends cash allocation based on current VIX levels. Calculate allocations for individual accounts, all accounts combined, or custom balances.'
-    },
-    {
-      icon: '💳',
-      title: 'Complete Capital Tracking',
-      description: 'Track deposits and withdrawals for each account. Total capital includes initial balance, deposits, withdrawals, and realized P&L from closed trades. Accurate capital management for better position sizing.'
+      description: 'Professional tool recommending cash allocation based on VIX levels. Calculate for individual accounts or combined balances.'
     },
     {
       icon: '🔍',
       title: 'Advanced Search & Filtering',
-      description: 'Search and filter trades by symbol, status, trade type, and account. Sortable columns for easy data analysis. Visual indicators for closed positions.'
+      description: 'Search and filter by symbol, status, trade type, and account. Visual indicators for closed positions.'
     },
     {
       icon: '🌓',
       title: 'Dark Mode & Mobile Friendly',
-      description: 'Complete dark mode support with easy theme switching. Fully responsive design that works seamlessly on desktop, tablet, and mobile devices.'
+      description: 'Dark mode support with easy theme switching. Fully responsive design for desktop, tablet, and mobile.'
     },
     {
-      icon: '🔐',
-      title: 'Secure Account Management',
-      description: 'Email verification, password reset functionality, and secure authentication. User profile management with the ability to update personal information and preferences.'
+      icon: '📚',
+      title: 'Interactive How-To Guide',
+      description: 'Step-by-step guide for new users covering all features, use cases, and trading strategies.'
     }
   ];
 
@@ -100,9 +100,8 @@ function Home() {
           <div className="hero-content">
             <h1 className="hero-title">Options Trading Tracker</h1>
             <p className="hero-subtitle">
-              Professional options trading tracking for the wheel strategy, LEAPS, and more.
-              Track your P&L, returns, portfolio allocation, and optimize your cash position with the VIX Calculator.
-              All in one place, completely free.
+              Professional options trading tracker for the wheel strategy, LEAPS, stock positions, and covered calls.
+              Track P&L, returns, portfolio allocation, and optimize cash with the VIX Calculator. All in one place, completely free.
             </p>
             <div className="hero-buttons">
               {isAuthenticated ? (
@@ -152,17 +151,17 @@ function Home() {
               <div className="step">
                 <div className="step-number">2</div>
                 <h3>Enter Your Trades</h3>
-                <p>Add trades manually or import from CSV/Excel using our comprehensive templates. Track CSPs, Covered Calls, LEAPS, and Assignments. The system automatically calculates premiums and tracks the full trade lifecycle.</p>
+                <p>Add trades manually or import from CSV/Excel. Track CSPs, Covered Calls, LEAPS with context-aware close options. Stock positions auto-create from assignments and exercises.</p>
               </div>
               <div className="step">
                 <div className="step-number">3</div>
                 <h3>Track Performance</h3>
-                <p>View your P&L, returns, monthly performance with YTD summary, and portfolio allocation on the comprehensive dashboard. See market data integration with real-time prices for indices and your positions.</p>
+                <p>View P&L, returns, monthly performance with YTD summary, and portfolio allocation on the dashboard. See market data with company logos and real-time prices.</p>
               </div>
               <div className="step">
                 <div className="step-number">4</div>
-                <h3>Use Tools & Manage Portfolio</h3>
-                <p>Use the VIX Cash Allocation Calculator to optimize your cash position. Export trades for backup. Close positions, track assignments, perform partial closes, and manage your complete options portfolio with advanced search and filtering.</p>
+                <h3>Manage Portfolio</h3>
+                <p>Close positions with context-aware options, track partial closes with history, and manage stock positions. Use the VIX Calculator and export trades for backup.</p>
               </div>
             </div>
           </div>

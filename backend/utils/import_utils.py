@@ -7,7 +7,11 @@ def parse_trade_file(file, account_id):
     Parse CSV or Excel file and convert to Trade objects.
     Expected columns (case-insensitive):
     - symbol, trade_type, strike_price, expiration_date, contract_quantity,
-    - premium, fees, trade_date, status, notes, assignment_price, close_date
+    - premium, fees, trade_date, status, notes, assignment_price, close_date,
+    - open_date, parent_trade_id, close_price, close_fees, close_premium, close_method
+    Supports both formats:
+    - Old format: 2 entries (opening trade + closing trade with parent_trade_id)
+    - New format: 1 entry with close_date, close_price, close_fees, close_premium, close_method
     """
     try:
         # Read file based on extension
@@ -49,6 +53,12 @@ def parse_trade_file(file, account_id):
             trade_price = float(row['trade_price']) if pd.notna(row.get('trade_price')) else None
             trade_action = str(row.get('trade_action', '')).strip() if pd.notna(row.get('trade_action')) else None
             
+            # Parse close fields (for single-entry closes)
+            close_price = float(row['close_price']) if pd.notna(row.get('close_price')) else None
+            close_fees = float(row['close_fees']) if pd.notna(row.get('close_fees')) else None
+            close_premium = float(row['close_premium']) if pd.notna(row.get('close_premium')) else None
+            close_method = str(row.get('close_method', '')).strip() if pd.notna(row.get('close_method')) else None
+            
             trade = Trade(
                 account_id=account_id,
                 symbol=str(row.get('symbol', '')).upper().strip(),
@@ -67,6 +77,10 @@ def parse_trade_file(file, account_id):
                 close_date=close_date,
                 status=str(row.get('status', 'Open')).strip(),
                 parent_trade_id=int(row['parent_trade_id']) if pd.notna(row.get('parent_trade_id')) else None,
+                close_price=close_price,
+                close_fees=close_fees,
+                close_premium=close_premium,
+                close_method=close_method,
                 notes=str(row.get('notes', '')) if pd.notna(row.get('notes')) else None
             )
             

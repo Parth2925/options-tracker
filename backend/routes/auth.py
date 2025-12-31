@@ -174,26 +174,6 @@ def register():
     if existing_user:
         return jsonify({'error': 'User already exists'}), 400
     
-    # #region agent log
-    try:
-        with open('/tmp/debug.log', 'a') as f:
-            f.write(json.dumps({
-                'timestamp': time.time(),
-                'location': 'auth.py:register',
-                'message': 'Before creating user object',
-                'data': {
-                    'email': data.get('email'),
-                    'first_name': data.get('first_name'),
-                    'last_name': data.get('last_name')
-                },
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'C'
-            }) + '\n')
-    except:
-        pass
-    # #endregion
-    
     # Generate verification token
     verification_token = generate_verification_token()
     token_expires = datetime.utcnow() + timedelta(hours=24)
@@ -236,18 +216,21 @@ def login():
     if not data or not data.get('email') or not data.get('password'):
         return jsonify({'error': 'Email and password are required'}), 400
     
-    email = data['email'].strip() if data.get('email') else None
+    email = data['email'].strip().lower() if data.get('email') else None
     user = User.query.filter_by(email=email).first()
     
     if not user:
         return jsonify({'error': 'Invalid email or password'}), 401
     
-    if not user.check_password(data['password']):
+    password_check_result = user.check_password(data['password'])
+    
+    if not password_check_result:
         return jsonify({'error': 'Invalid email or password'}), 401
     
     try:
         # Convert user.id to string for JWT (consistent with register endpoint)
         access_token = create_access_token(identity=str(user.id))
+        
         return jsonify({
             'access_token': access_token,
             'user': user.to_dict()
@@ -271,107 +254,27 @@ def verify_email():
     """Verify user email with token"""
     token = request.args.get('token')
     
-    # #region agent log
-    import json
-    import time
-    try:
-        with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                'timestamp': time.time(),
-                'location': 'auth.py:verify_email',
-                'message': 'Verification attempt started',
-                'data': {'token': token[:10] + '...' if token else None},
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'A'
-            }) + '\n')
-    except:
-        pass
-    # #endregion
-    
     if not token:
         return jsonify({'error': 'Verification token is required'}), 400
     
     user = User.query.filter_by(verification_token=token).first()
-    
-    # #region agent log
-    try:
-        with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                'timestamp': time.time(),
-                'location': 'auth.py:verify_email',
-                'message': 'User lookup by token',
-                'data': {'token_found': user is not None, 'user_id': user.id if user else None, 'email_verified': user.email_verified if user else None, 'has_token': user.verification_token is not None if user else None},
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'A'
-            }) + '\n')
-    except:
-        pass
-    # #endregion
     
     if not user:
         # Token not found - could mean:
         # 1. Token was already used (user verified)
         # 2. Token is invalid/expired
         # Since we can't distinguish, provide helpful error message
-        # #region agent log
-        try:
-            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:verify_email',
-                    'message': 'Token not found in database',
-                    'data': {},
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'A'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
         return jsonify({'error': 'Invalid or expired verification token. If you already verified your email, you can log in. Otherwise, please request a new verification email from your profile page.'}), 400
     
     # Check if already verified (idempotent - allow re-verification attempts)
     if user.email_verified:
-        # #region agent log
-        try:
-            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:verify_email',
-                    'message': 'User already verified - returning success',
-                    'data': {'user_id': user.id},
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'A'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
         return jsonify({'message': 'Email is already verified'}), 200
     
     # Check if token has expired
     if user.verification_token_expires and user.verification_token_expires < datetime.utcnow():
-        # #region agent log
-        try:
-            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:verify_email',
-                    'message': 'Token expired',
-                    'data': {'user_id': user.id, 'expires': str(user.verification_token_expires), 'now': str(datetime.utcnow())},
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'A'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
         return jsonify({'error': 'Verification token has expired. Please request a new verification email.'}), 400
     
     # Verify email (idempotent - safe to call multiple times)
-    was_already_verified = user.email_verified
     if not user.email_verified:
         user.email_verified = True
         # Keep the token in database for idempotency (don't clear it)
@@ -380,39 +283,9 @@ def verify_email():
     
     try:
         db.session.commit()
-        # #region agent log
-        try:
-            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:verify_email',
-                    'message': 'Email verified successfully',
-                    'data': {'user_id': user.id, 'was_already_verified': was_already_verified},
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'A'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
         return jsonify({'message': 'Email verified successfully'}), 200
     except Exception as e:
         db.session.rollback()
-        # #region agent log
-        try:
-            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'timestamp': time.time(),
-                    'location': 'auth.py:verify_email',
-                    'message': 'Database error during verification',
-                    'data': {'user_id': user.id, 'error': str(e)},
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'A'
-                }) + '\n')
-        except:
-            pass
-        # #endregion
         return jsonify({'error': str(e)}), 500
 
 @auth_bp.route('/resend-verification', methods=['POST'])
