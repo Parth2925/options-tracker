@@ -32,17 +32,50 @@ if database_url.startswith('postgresql://') or database_url.startswith('postgres
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Add connection pool settings to handle connection issues
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,  # Verify connections before using
-    'pool_recycle': 300,    # Recycle connections after 5 minutes
-    'pool_size': 5,         # Connection pool size
-    'max_overflow': 10,     # Max overflow connections
-    'connect_args': {
-        'connect_timeout': 10,  # 10 second connection timeout
-        'options': '-c statement_timeout=5000'  # 5 second query timeout for PostgreSQL
-    } if database_url.startswith('postgresql://') or database_url.startswith('postgres://') else {}
-}
+
+# Add connection pool settings - only for PostgreSQL (SQLite doesn't use connection pooling)
+if database_url.startswith('postgresql://') or database_url.startswith('postgres://'):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,  # Verify connections before using
+        'pool_recycle': 300,    # Recycle connections after 5 minutes
+        'pool_size': 5,         # Connection pool size
+        'max_overflow': 10,     # Max overflow connections
+        'connect_args': {
+            'connect_timeout': 10,  # 10 second connection timeout
+            'options': '-c statement_timeout=5000'  # 5 second query timeout for PostgreSQL
+        }
+    }
+elif database_url.startswith('sqlite:///'):
+    # For SQLite, ensure instance directory exists and use absolute path
+    # SQLite URL format: sqlite:///path/to/db.db
+    # Extract the path part (everything after sqlite:///)
+    db_path = database_url.replace('sqlite:///', '')
+    
+    # If path contains 'instance', ensure the directory exists
+    if 'instance' in db_path:
+        instance_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+        if not os.path.exists(instance_dir):
+            os.makedirs(instance_dir)
+        
+        # Convert to absolute path
+        if not os.path.isabs(db_path):
+            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), db_path)
+        
+        database_url = f'sqlite:///{db_path}'
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    
+    # SQLite doesn't need connection pooling - use NullPool to disable pooling
+    # For SQLite, we need check_same_thread=False for Flask's multi-threaded environment
+    from sqlalchemy.pool import NullPool
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'poolclass': NullPool,  # Disable connection pooling for SQLite
+        'connect_args': {
+            'check_same_thread': False  # Allow SQLite to be used in multi-threaded environment
+        }
+    }
+else:
+    # For other database types, use minimal settings
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 app.config['FINNHUB_API_KEY'] = os.getenv('FINNHUB_API_KEY', 'd525qj1r01qu5pvmiv2gd525qj1r01qu5pvmiv30')
