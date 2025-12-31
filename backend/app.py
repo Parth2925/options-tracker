@@ -108,7 +108,23 @@ def user_lookup_callback(_jwt_header, jwt_payload):
 # In production, use FRONTEND_URL environment variable
 # In development, allow localhost
 frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+# Remove trailing slash if present (CORS origin matching requires exact match without trailing slash)
+frontend_url = frontend_url.rstrip('/')
 allowed_origins = [frontend_url]
+
+# In production, also add www/non-www variant if applicable
+if os.getenv('FLASK_ENV') == 'production' and frontend_url.startswith('http'):
+    # If URL contains www, also add non-www version, and vice versa
+    if 'www.' in frontend_url:
+        non_www_url = frontend_url.replace('www.', '')
+        allowed_origins.append(non_www_url)
+    elif frontend_url.startswith('https://') and '.' in frontend_url.replace('https://', ''):
+        # Add www version if it's a production HTTPS URL
+        parts = frontend_url.split('://', 1)
+        if len(parts) == 2:
+            www_url = f"{parts[0]}://www.{parts[1]}"
+            allowed_origins.append(www_url)
+
 if os.getenv('FLASK_ENV') != 'production':
     # Allow localhost for development
     allowed_origins.extend(['http://localhost:3000', 'http://127.0.0.1:3000'])
@@ -126,7 +142,7 @@ CORS(app,
 # Log CORS configuration for debugging
 print(f"CORS Configuration:")
 print(f"  Allowed origins: {allowed_origins}")
-print(f"  Frontend URL from env: {frontend_url}")
+print(f"  Frontend URL from env (normalized): {frontend_url}")
 print(f"  Flask ENV: {os.getenv('FLASK_ENV', 'not set')}")
 
 
