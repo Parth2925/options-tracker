@@ -639,6 +639,7 @@ class Trade(db.Model):
                               if (child.trade_action in ['Bought to Close', 'Sold to Close']) or
                                  (child.status == 'Expired') or
                                  (child.status == 'Assigned' or child.trade_type == 'Assignment') or
+                                 (child.status == 'Called Away' or child.close_method == 'called_away') or
                                  (child.status == 'Closed' and child.close_method == 'exercise')]
             if closing_children:
                 result['closing_trades'] = [child.to_dict(include_realized_pnl=True) for child in closing_children]
