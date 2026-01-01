@@ -56,7 +56,7 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
     trade_price: '',
     fees: '',
     contract_quantity: trade.remaining_open_quantity || trade.contract_quantity || 1,
-    assignment_price: trade.strike_price || '',
+    assignment_price: trade.strike_price ? String(trade.strike_price) : '',
     notes: ''
   });
 
@@ -165,10 +165,11 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
         }
       }
     } else if (formData.close_method === 'assigned') {
-      if (!formData.assignment_price || formData.assignment_price.trim() === '') {
+      const assignmentPriceStr = String(formData.assignment_price || '').trim();
+      if (!assignmentPriceStr) {
         errors.assignment_price = 'Assignment price is required';
       } else {
-        const price = parseFloat(formData.assignment_price);
+        const price = parseFloat(assignmentPriceStr);
         if (isNaN(price) || price <= 0) {
           errors.assignment_price = 'Assignment price must be a positive number';
         }
