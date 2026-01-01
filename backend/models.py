@@ -316,21 +316,92 @@ class Trade(db.Model):
         
         # Scenario 4: Covered call was called away (shares called away)
         elif self.trade_type == 'Covered Call' and (self.status == 'Called Away' or self.status == 'Assigned' or self.close_method == 'called_away'):
+            # #region agent log
+            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({
+                    'sessionId': 'debug-session',
+                    'runId': 'run1',
+                    'hypothesisId': 'A',
+                    'location': 'models.py:318',
+                    'message': 'Scenario 4: Covered call called away - entry',
+                    'data': {
+                        'trade_id': self.id,
+                        'trade_type': self.trade_type,
+                        'status': self.status,
+                        'close_method': self.close_method,
+                        'stock_position_id': self.stock_position_id,
+                        'strike_price': float(self.strike_price) if self.strike_price else None,
+                        'premium': float(self.premium) if self.premium else 0,
+                        'contract_quantity': self.contract_quantity
+                    },
+                    'timestamp': int(__import__('time').time() * 1000)
+                }) + '\n')
+            # #endregion
             # Premium from covered call
             call_premium = float(self.premium) if self.premium else 0
             
             # Use actual cost basis from stock position if available
             if self.stock_position_id and self.strike_price:
                 stock_position = StockPosition.query.get(self.stock_position_id)
+                # #region agent log
+                with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+                    import json
+                    f.write(json.dumps({
+                        'sessionId': 'debug-session',
+                        'runId': 'run1',
+                        'hypothesisId': 'B',
+                        'location': 'models.py:340',
+                        'message': 'Stock position lookup result',
+                        'data': {
+                            'stock_position_id': self.stock_position_id,
+                            'stock_position_found': stock_position is not None,
+                            'cost_basis_per_share': float(stock_position.cost_basis_per_share) if stock_position and stock_position.cost_basis_per_share else None
+                        },
+                        'timestamp': int(__import__('time').time() * 1000)
+                    }) + '\n')
+                # #endregion
                 if stock_position and stock_position.cost_basis_per_share:
                     # Calculate stock appreciation using actual cost basis
                     # Stock appreciation: (Call Strike - Cost Basis) × Quantity × 100
                     cost_basis = float(stock_position.cost_basis_per_share)
                     stock_appreciation = (float(self.strike_price) - cost_basis) * self.contract_quantity * 100
                     realized_pnl = call_premium + stock_appreciation
+                    # #region agent log
+                    with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+                        import json
+                        f.write(json.dumps({
+                            'sessionId': 'debug-session',
+                            'runId': 'run1',
+                            'hypothesisId': 'C',
+                            'location': 'models.py:350',
+                            'message': 'P&L calculated with stock appreciation',
+                            'data': {
+                                'call_premium': call_premium,
+                                'cost_basis': cost_basis,
+                                'strike_price': float(self.strike_price),
+                                'stock_appreciation': stock_appreciation,
+                                'realized_pnl': realized_pnl
+                            },
+                            'timestamp': int(__import__('time').time() * 1000)
+                        }) + '\n')
+                    # #endregion
                 elif self.strike_price:
                     # Fallback: if no stock position, just use premium
                     realized_pnl = call_premium
+                    # #region agent log
+                    with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+                        import json
+                        f.write(json.dumps({
+                            'sessionId': 'debug-session',
+                            'runId': 'run1',
+                            'hypothesisId': 'D',
+                            'location': 'models.py:360',
+                            'message': 'Fallback: No cost basis, using premium only',
+                            'data': {'realized_pnl': realized_pnl},
+                            'timestamp': int(__import__('time').time() * 1000)
+                        }) + '\n')
+                    # #endregion
                 else:
                     realized_pnl = call_premium
             else:
@@ -347,6 +418,23 @@ class Trade(db.Model):
                 else:
                     # Just the premium if we can't find assignment details
                     realized_pnl = call_premium
+                # #region agent log
+                with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+                    import json
+                    f.write(json.dumps({
+                        'sessionId': 'debug-session',
+                        'runId': 'run1',
+                        'hypothesisId': 'E',
+                        'location': 'models.py:375',
+                        'message': 'Fallback path: No stock_position_id or strike_price',
+                        'data': {
+                            'has_stock_position_id': bool(self.stock_position_id),
+                            'has_strike_price': bool(self.strike_price),
+                            'realized_pnl': realized_pnl
+                        },
+                        'timestamp': int(__import__('time').time() * 1000)
+                    }) + '\n')
+                # #endregion
         
         # Scenario 5: Assignment trade itself - calculate P&L when closed
         elif self.trade_type == 'Assignment':
@@ -514,11 +602,18 @@ class Trade(db.Model):
     def auto_determine_status(self):
         """
         Automatically determine trade status based on dates and relationships.
-        Returns: 'Open', 'Closed', 'Assigned', or 'Expired'
+        Returns: 'Open', 'Closed', 'Assigned', 'Called Away', or 'Expired'
         """
         from datetime import date
         
         today = date.today()
+        
+        # IMPORTANT: Check for special statuses (Assigned, Called Away) BEFORE checking close_date
+        # This prevents auto_determine_status from overriding explicitly set statuses
+        if self.status == 'Assigned':
+            return 'Assigned'
+        if self.status == 'Called Away' or self.close_method == 'called_away':
+            return 'Called Away'
         
         # If there's a close_date, it's closed
         if self.close_date:
@@ -527,12 +622,6 @@ class Trade(db.Model):
         # If this is a closing trade (Bought to Close or Sold to Close), it's closed
         if self.trade_action in ['Bought to Close', 'Sold to Close']:
             return 'Closed'
-        
-        # If status is explicitly set to Assigned or Called Away, keep it
-        if self.status == 'Assigned':
-            return 'Assigned'
-        if self.status == 'Called Away':
-            return 'Called Away'
         
         # If it's an assignment trade, it's assigned
         if self.trade_type == 'Assignment':
@@ -618,7 +707,44 @@ class Trade(db.Model):
         }
         
         if include_realized_pnl:
+            # #region agent log
+            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({
+                    'sessionId': 'debug-session',
+                    'runId': 'run1',
+                    'hypothesisId': 'J',
+                    'location': 'models.py:708',
+                    'message': 'to_dict: About to calculate realized_pnl',
+                    'data': {
+                        'trade_id': self.id,
+                        'trade_type': self.trade_type,
+                        'status': self.status,
+                        'close_method': self.close_method,
+                        'has_close_date': bool(self.close_date),
+                        'close_premium': float(self.close_premium) if self.close_premium is not None else None,
+                        'stock_position_id': self.stock_position_id
+                    },
+                    'timestamp': int(__import__('time').time() * 1000)
+                }) + '\n')
+            # #endregion
             realized_pnl = self.calculate_realized_pnl()
+            # #region agent log
+            with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({
+                    'sessionId': 'debug-session',
+                    'runId': 'run1',
+                    'hypothesisId': 'K',
+                    'location': 'models.py:730',
+                    'message': 'to_dict: calculated realized_pnl',
+                    'data': {
+                        'trade_id': self.id,
+                        'realized_pnl': realized_pnl
+                    },
+                    'timestamp': int(__import__('time').time() * 1000)
+                }) + '\n')
+            # #endregion
             # For Assignment trades, show parent CSP's premium as realized P&L
             if self.trade_type == 'Assignment' and realized_pnl == 0 and self.parent_trade_id:
                 parent = Trade.query.get(self.parent_trade_id)

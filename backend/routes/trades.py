@@ -95,6 +95,10 @@ def get_trades():
                 # Trade is explicitly Open with remaining quantity - don't override
                 continue
             
+            # Don't override special statuses (Called Away, Assigned) that were explicitly set
+            if trade.status in ['Called Away', 'Assigned']:
+                continue
+            
             # Don't override manually set 'Closed' status (e.g., for expired worthless trades)
             # If user manually set status to 'Closed', respect that choice
             if trade.status == 'Closed' and not trade.close_date:
@@ -1776,6 +1780,27 @@ def handle_called_away(trade, data):
     else:
         # Full call away - trade is updated directly
         db.session.commit()
+        # #region agent log
+        with open('/Users/parthsoni/Documents/.cursor/debug.log', 'a') as f:
+            import json
+            trade_dict = trade.to_dict(include_realized_pnl=True)
+            f.write(json.dumps({
+                'sessionId': 'debug-session',
+                'runId': 'run1',
+                'hypothesisId': 'H',
+                'location': 'routes/trades.py:1775',
+                'message': 'Full call away - returning trade dict',
+                'data': {
+                    'trade_id': trade.id,
+                    'status': trade.status,
+                    'close_method': trade.close_method,
+                    'has_realized_pnl': 'realized_pnl' in trade_dict,
+                    'realized_pnl': trade_dict.get('realized_pnl'),
+                    'stock_position_id': trade.stock_position_id
+                },
+                'timestamp': int(__import__('time').time() * 1000)
+            }) + '\n')
+        # #endregion
         return jsonify(trade.to_dict(include_realized_pnl=True)), 200
 
 def handle_exercise(trade, data):
