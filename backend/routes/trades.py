@@ -1679,6 +1679,10 @@ def handle_assigned(trade, data):
         # Calculate shares being called away
         shares_called_away = contract_quantity * 100
         
+        # Verify enough shares are available in the stock position
+        if shares_called_away > stock_position.shares:
+            return jsonify({'error': f'Insufficient shares in stock position. Need {shares_called_away} shares, but only {stock_position.shares} available.'}), 400
+        
         # Update parent Covered Call
         total_assigned = remaining_qty - contract_quantity
         is_full_assignment = total_assigned <= 0
@@ -1704,15 +1708,13 @@ def handle_assigned(trade, data):
         if not trade.open_date:
             trade.open_date = trade.trade_date
         
-        # Return shares to stock position by reducing shares_used
-        # When a covered call is assigned, the shares are called away (sold)
-        # The stock position's shares_used should be reduced since the shares are no longer securing the call
-        # Note: shares_used is stored on the Trade, not the StockPosition
-        # For full assignment, shares_used becomes 0 (all shares called away)
-        # For partial assignment, shares_used is reduced proportionally
-        # Since shares_used is on the trade itself, when the trade is closed (assigned), 
-        # the get_available_shares() method will automatically not count it anymore
-        # So we don't need to manually reduce shares_used - the trade status change handles it
+        # Reduce stock position shares - shares are called away (sold) when assigned
+        stock_position.shares -= shares_called_away
+        
+        # If all shares are called away, mark the position as closed/called away
+        if stock_position.shares <= 0:
+            stock_position.shares = 0  # Ensure it doesn't go negative
+            stock_position.status = 'Called Away'
         
         # If this is a partial assignment, create a closing trade entry
         if not is_full_assignment:
