@@ -126,9 +126,10 @@ function HowToUse() {
                 <li>Click <strong>"Close"</strong> on your open CSP</li>
                 <li>Select <strong>"Assigned"</strong> as the close method</li>
                 <li>Enter the <strong>Assignment Date</strong> (defaults to expiration date)</li>
+                <li>Enter the <strong>Assignment Fee</strong> if your broker charged one (typically $15-25). This will be auto-populated if you set a default assignment fee for your account.</li>
                 <li>Click <strong>"Close Trade"</strong></li>
               </ol>
-              <p><strong>Important:</strong> When a CSP is assigned, the system automatically creates a stock position for you! You can view it in the <strong>Positions</strong> page under the "Stocks" tab.</p>
+              <p><strong>Important:</strong> Options are always assigned at the strike price (this is automatically set and cannot be changed). When a CSP is assigned, the system automatically creates a stock position for you with a cost basis equal to the strike price! You can view it in the <strong>Positions</strong> page under the "Stocks" tab. The P&L for the assigned CSP is the premium received minus any assignment fee.</p>
             </div>
           </div>
 
@@ -288,14 +289,15 @@ function HowToUse() {
             </div>
 
             <div className="sub-step">
-              <h5>Option 3: Assigned</h5>
+              <h5>Option 3: Called Away</h5>
               <ol>
                 <li>Click <strong>"Close"</strong> on your open covered call</li>
-                <li>Select <strong>"Assigned"</strong></li>
+                <li>Select <strong>"Called Away"</strong></li>
                 <li>Enter the assignment date (defaults to expiration date)</li>
+                <li>Enter the <strong>Assignment Fee</strong> if your broker charged one (typically $15-25). This will be auto-populated if you set a default assignment fee for your account.</li>
                 <li>Click <strong>"Close Trade"</strong></li>
               </ol>
-              <p>Your shares are sold at the strike price. The system automatically updates your stock position to reflect the reduced shares.</p>
+              <p><strong>Important:</strong> Options are always called away at the strike price (this is automatically set and cannot be changed). Your shares are sold at the strike price, and the system automatically updates your stock position to reflect the reduced shares. The P&L includes both the premium received and any stock appreciation (strike price minus your cost basis).</p>
             </div>
           </div>
         </div>

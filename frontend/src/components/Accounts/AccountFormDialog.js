@@ -47,6 +47,7 @@ function AccountFormDialog({ account, onSuccess, onCancel }) {
     account_type: '',
     initial_balance: '',
     default_fee: '',
+    assignment_fee: '',
   });
 
   // Initialize form data if editing
@@ -57,6 +58,7 @@ function AccountFormDialog({ account, onSuccess, onCancel }) {
         account_type: account.account_type || '',
         initial_balance: account.initial_balance || '',
         default_fee: account.default_fee || '',
+        assignment_fee: account.assignment_fee || '',
       });
     }
   }, [account]);
@@ -116,6 +118,20 @@ function AccountFormDialog({ account, onSuccess, onCancel }) {
       }
     }
     
+    if (formData.assignment_fee) {
+      const feeStr = String(formData.assignment_fee);
+      if (feeStr.trim() !== '') {
+        const fee = parseFloat(formData.assignment_fee);
+        if (isNaN(fee)) {
+          errors.assignment_fee = 'Assignment fee must be a number';
+        } else if (fee < 0) {
+          errors.assignment_fee = 'Assignment fee cannot be negative';
+        } else if (fee > 1000) {
+          errors.assignment_fee = 'Assignment fee seems unusually high. Please verify.';
+        }
+      }
+    }
+    
     if (!formData.account_type) {
       errors.account_type = 'Account type is required';
     }
@@ -146,6 +162,7 @@ function AccountFormDialog({ account, onSuccess, onCancel }) {
         ...formData,
         initial_balance: formData.initial_balance ? parseFloat(formData.initial_balance) : 0,
         default_fee: formData.default_fee ? parseFloat(formData.default_fee) : 0,
+        assignment_fee: formData.assignment_fee ? parseFloat(formData.assignment_fee) : 0,
       };
 
       if (account) {
@@ -254,6 +271,25 @@ function AccountFormDialog({ account, onSuccess, onCancel }) {
               </small>
               {fieldErrors.default_fee && (
                 <div className="field-error">{fieldErrors.default_fee}</div>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label>Default Assignment Fee</label>
+              <input
+                type="number"
+                step="0.01"
+                name="assignment_fee"
+                value={formData.assignment_fee}
+                onChange={handleChange}
+                placeholder="0.00"
+                className={fieldErrors.assignment_fee ? 'error-field' : ''}
+              />
+              <small style={{ color: 'var(--text-secondary)', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                Default fee charged by your broker for assignment/exercise (typically $15-25). This will be auto-populated when closing trades as "Assigned" or "Called Away". You can still override it per trade.
+              </small>
+              {fieldErrors.assignment_fee && (
+                <div className="field-error">{fieldErrors.assignment_fee}</div>
               )}
             </div>
           </div>

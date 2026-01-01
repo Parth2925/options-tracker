@@ -99,6 +99,23 @@ export const releaseNotes = {
       "Fixed trades table layout to stay within card boundaries on desktop",
       "Fixed mobile layout where filters bar was scrolling with table"
     ]
+  },
+  "1.5.0": {
+    date: "2025-01-01",
+    features: [
+      "Assignment Fee Support: Track assignment/exercise fees charged by brokers (typically $15-25)",
+      "Default Assignment Fee per Account: Set a default assignment fee that auto-populates when closing trades as 'Assigned' or 'Called Away'"
+    ],
+    improvements: [
+      "Assignment Price Validation: Options are now always assigned/called away at the strike price (enforced, read-only field)",
+      "Accurate P&L Calculations: Assignment fees are now properly subtracted from P&L for assigned CSPs and called away covered calls",
+      "Updated How to Use Guide: Instructions now reflect 'Called Away' terminology for covered calls and include assignment fee information",
+      "Improved Close Trade Dialog: Assignment price is read-only (always equals strike), with separate assignment fee field"
+    ],
+    bugfixes: [
+      "Fixed P&L accuracy for assigned positions by accounting for assignment fees",
+      "Prevented user errors by enforcing assignment price equals strike price (options trading rule)"
+    ]
   }
 };
 

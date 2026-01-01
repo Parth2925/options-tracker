@@ -1,7 +1,7 @@
 """
 Application version information
 """
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 def get_version():
     """Get the current application version"""

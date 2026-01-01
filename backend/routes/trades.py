@@ -1613,9 +1613,14 @@ def handle_assigned(trade, data):
         '%Y-%m-%d'
     ).date()
     
-    assignment_price = float(data.get('assignment_price', trade.strike_price)) if data.get('assignment_price') or trade.strike_price else None
-    if not assignment_price:
-        return jsonify({'error': 'assignment_price is required'}), 400
+    # Assignment price MUST equal strike price (options are always assigned at strike)
+    if not trade.strike_price:
+        return jsonify({'error': 'Strike price is required for assignment'}), 400
+    assignment_price = float(trade.strike_price)  # Always use strike price, no user input allowed
+    
+    # Get assignment fee (from user input or account default)
+    account = Account.query.get(trade.account_id)
+    assignment_fee = float(data.get('assignment_fee', account.assignment_fee if account and account.assignment_fee else 0)) if data.get('assignment_fee') is not None or (account and account.assignment_fee) else 0
     
     # Handle CSP assignment (creates stock position)
     if trade.trade_type == 'CSP':
@@ -1629,6 +1634,7 @@ def handle_assigned(trade, data):
             expiration_date=trade.expiration_date,
             contract_quantity=contract_quantity,
             assignment_price=assignment_price,
+            assignment_fee=assignment_fee,  # Store assignment fee
             trade_date=assignment_date,
             open_date=trade.trade_date,
             status='Assigned',
@@ -1648,6 +1654,7 @@ def handle_assigned(trade, data):
             trade.close_date = assignment_date
             trade.assignment_price = assignment_price
             trade.close_method = 'assigned'
+            trade.assignment_fee = assignment_fee  # Store assignment fee
             if data.get('notes'):
                 trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
         else:
@@ -1697,9 +1704,14 @@ def handle_called_away(trade, data):
         '%Y-%m-%d'
     ).date()
     
-    assignment_price = float(data.get('assignment_price', trade.strike_price)) if data.get('assignment_price') or trade.strike_price else None
-    if not assignment_price:
-        return jsonify({'error': 'assignment_price is required'}), 400
+    # Assignment price MUST equal strike price (options are always called away at strike)
+    if not trade.strike_price:
+        return jsonify({'error': 'Strike price is required for call away'}), 400
+    assignment_price = float(trade.strike_price)  # Always use strike price, no user input allowed
+    
+    # Get assignment fee (from user input or account default)
+    account = Account.query.get(trade.account_id)
+    assignment_fee = float(data.get('assignment_fee', account.assignment_fee if account and account.assignment_fee else 0)) if data.get('assignment_fee') is not None or (account and account.assignment_fee) else 0
     
     # Verify the covered call has a stock position
     if not trade.stock_position_id:
@@ -1729,6 +1741,7 @@ def handle_called_away(trade, data):
         trade.close_price = None  # No closing price for called away
         trade.close_fees = 0
         trade.close_premium = 0  # Called away has no closing premium (shares are called away at strike)
+        trade.assignment_fee = assignment_fee  # Store assignment fee
         if data.get('notes'):
             trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
     else:
@@ -1771,6 +1784,7 @@ def handle_called_away(trade, data):
             stock_position_id=trade.stock_position_id,
             shares_used=contract_quantity * 100,  # Shares used by this partial call away
             assignment_price=assignment_price,
+            assignment_fee=assignment_fee,  # Store assignment fee
             close_method='called_away',
             notes=data.get('notes')
         )
