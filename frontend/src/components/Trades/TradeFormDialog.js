@@ -756,6 +756,24 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
                   </select>
                 </div>
 
+                {formData.close_method === 'assigned' && (
+                  <div className="form-group">
+                    <label>Assignment Price *</label>
+                    <input
+                      type="number"
+                      name="assignment_price"
+                      value={formData.assignment_price}
+                      onChange={handleChange}
+                      step="0.01"
+                      placeholder={trade?.strike_price || 'e.g., 100.00'}
+                      required
+                    />
+                    <small style={{ display: 'block', marginTop: '4px', color: 'var(--text-secondary)', fontSize: '12px' }}>
+                      Price at which shares were assigned (usually the strike price)
+                    </small>
+                  </div>
+                )}
+
                 {formData.close_method && formData.close_method !== 'expired' && formData.close_method !== 'assigned' && formData.close_method !== 'exercise' && (
                   <>
                     <div className="form-group">
