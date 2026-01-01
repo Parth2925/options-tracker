@@ -222,7 +222,8 @@ class Trade(db.Model):
         realized_pnl = 0
         
         # Scenario 1a: Single-entry close (trade has close_premium - full close, updated directly)
-        if self.close_date and self.close_premium is not None and not self.parent_trade_id:
+        # BUT: Exclude assigned covered calls - they need special handling for stock appreciation (handled in Scenario 4)
+        if self.close_date and self.close_premium is not None and not self.parent_trade_id and not (self.trade_type == 'Covered Call' and self.close_method == 'assigned'):
             # This is an opening trade that was closed directly (single-entry approach)
             opening_premium = float(self.premium) if self.premium else 0
             closing_premium = float(self.close_premium)
