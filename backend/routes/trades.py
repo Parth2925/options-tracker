@@ -1583,9 +1583,9 @@ def handle_expired(trade, data):
         return jsonify(closing_trade.to_dict(include_realized_pnl=True)), 201
 
 def handle_assigned(trade, data):
-    """Handle Assigned - creates assignment trade and stock position"""
-    if trade.trade_type != 'CSP':
-        return jsonify({'error': 'Assigned method is only for CSP trades'}), 400
+    """Handle Assigned - for CSP creates stock position, for Covered Call returns shares to stock position"""
+    if trade.trade_type not in ['CSP', 'Covered Call']:
+        return jsonify({'error': 'Assigned method is only for CSP or Covered Call trades'}), 400
     
     # Get remaining quantity
     remaining_qty = trade.get_remaining_open_quantity()
@@ -1606,67 +1606,146 @@ def handle_assigned(trade, data):
     if not assignment_price:
         return jsonify({'error': 'assignment_price is required'}), 400
     
-    # Create assignment trade
-    assignment_trade = Trade(
-        account_id=trade.account_id,
-        symbol=trade.symbol,
-        trade_type='Assignment',
-        position_type='Assignment',
-        strike_price=trade.strike_price,
-        expiration_date=trade.expiration_date,
-        contract_quantity=contract_quantity,
-        assignment_price=assignment_price,
-        trade_date=assignment_date,
-        open_date=trade.trade_date,
-        status='Assigned',
-        parent_trade_id=trade.id,
-        notes=data.get('notes')
-    )
-    
-    db.session.add(assignment_trade)
-    
-    # Update parent CSP
-    total_assigned = remaining_qty - contract_quantity
-    is_full_assignment = total_assigned <= 0
-    
-    if is_full_assignment:
-        # FULL ASSIGNMENT: Update original CSP directly (single-entry approach)
-        trade.status = 'Assigned'
-        trade.close_date = assignment_date
-        trade.assignment_price = assignment_price
-        trade.close_method = 'assigned'
-        if data.get('notes'):
-            trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
-    else:
-        # PARTIAL ASSIGNMENT: Keep parent open, create assignment trade
-        trade.status = 'Open'
-        trade.close_date = None
-        trade.assignment_price = assignment_price
-    
-    if not trade.open_date:
-        trade.open_date = trade.trade_date
-    
-    # Always create assignment trade for stock position tracking (even for full assignments)
-    # This ensures we have a record of the assignment event and can link stock positions
-    # But the original CSP is also updated to show it's assigned
-    
-    # Auto-create stock position from assignment
-    shares = contract_quantity * 100
-    if shares > 0 and assignment_price > 0:
-        stock_position = StockPosition(
+    # Handle CSP assignment (creates stock position)
+    if trade.trade_type == 'CSP':
+        # Create assignment trade
+        assignment_trade = Trade(
             account_id=trade.account_id,
             symbol=trade.symbol,
-            shares=shares,
-            cost_basis_per_share=assignment_price,
-            acquired_date=assignment_date,
-            status='Open',
-            source_trade_id=assignment_trade.id,
-            notes=f'Assigned from CSP trade #{trade.id}'
+            trade_type='Assignment',
+            position_type='Assignment',
+            strike_price=trade.strike_price,
+            expiration_date=trade.expiration_date,
+            contract_quantity=contract_quantity,
+            assignment_price=assignment_price,
+            trade_date=assignment_date,
+            open_date=trade.trade_date,
+            status='Assigned',
+            parent_trade_id=trade.id,
+            notes=data.get('notes')
         )
-        db.session.add(stock_position)
+        
+        db.session.add(assignment_trade)
+        
+        # Update parent CSP
+        total_assigned = remaining_qty - contract_quantity
+        is_full_assignment = total_assigned <= 0
+        
+        if is_full_assignment:
+            # FULL ASSIGNMENT: Update original CSP directly (single-entry approach)
+            trade.status = 'Assigned'
+            trade.close_date = assignment_date
+            trade.assignment_price = assignment_price
+            trade.close_method = 'assigned'
+            if data.get('notes'):
+                trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+        else:
+            # PARTIAL ASSIGNMENT: Keep parent open, create assignment trade
+            trade.status = 'Open'
+            trade.close_date = None
+            trade.assignment_price = assignment_price
+        
+        if not trade.open_date:
+            trade.open_date = trade.trade_date
+        
+        # Auto-create stock position from assignment
+        shares = contract_quantity * 100
+        if shares > 0 and assignment_price > 0:
+            stock_position = StockPosition(
+                account_id=trade.account_id,
+                symbol=trade.symbol,
+                shares=shares,
+                cost_basis_per_share=assignment_price,
+                acquired_date=assignment_date,
+                status='Open',
+                source_trade_id=assignment_trade.id,
+                notes=f'Assigned from CSP trade #{trade.id}'
+            )
+            db.session.add(stock_position)
+        
+        db.session.commit()
+        return jsonify(assignment_trade.to_dict(include_realized_pnl=True)), 201
     
-    db.session.commit()
-    return jsonify(assignment_trade.to_dict(include_realized_pnl=True)), 201
+    # Handle Covered Call assignment (returns shares to stock position)
+    elif trade.trade_type == 'Covered Call':
+        # Verify the covered call has a stock position
+        if not trade.stock_position_id:
+            return jsonify({'error': 'Covered Call trade must be linked to a stock position'}), 400
+        
+        stock_position = StockPosition.query.get(trade.stock_position_id)
+        if not stock_position:
+            return jsonify({'error': 'Stock position not found'}), 404
+        
+        # Calculate shares being called away
+        shares_called_away = contract_quantity * 100
+        
+        # Update parent Covered Call
+        total_assigned = remaining_qty - contract_quantity
+        is_full_assignment = total_assigned <= 0
+        
+        if is_full_assignment:
+            # FULL ASSIGNMENT: Update original Covered Call directly (single-entry approach)
+            trade.status = 'Assigned'
+            trade.close_date = assignment_date
+            trade.assignment_price = assignment_price
+            trade.close_method = 'assigned'
+            trade.close_price = None  # No closing price for assignment
+            trade.close_fees = 0
+            trade.close_premium = 0  # Assignment has no closing premium (shares are called away at strike)
+            if data.get('notes'):
+                trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+        else:
+            # PARTIAL ASSIGNMENT: Keep parent open (this creates a new closing trade entry)
+            # For partial assignments, we'll keep the parent open and create a closing trade
+            trade.status = 'Open'
+            trade.close_date = None
+            trade.assignment_price = assignment_price
+        
+        if not trade.open_date:
+            trade.open_date = trade.trade_date
+        
+        # Return shares to stock position by reducing shares_used
+        # When a covered call is assigned, the shares are called away (sold)
+        # The stock position's shares_used should be reduced since the shares are no longer securing the call
+        # Note: shares_used is stored on the Trade, not the StockPosition
+        # For full assignment, shares_used becomes 0 (all shares called away)
+        # For partial assignment, shares_used is reduced proportionally
+        # Since shares_used is on the trade itself, when the trade is closed (assigned), 
+        # the get_available_shares() method will automatically not count it anymore
+        # So we don't need to manually reduce shares_used - the trade status change handles it
+        
+        # If this is a partial assignment, create a closing trade entry
+        if not is_full_assignment:
+            closing_trade = Trade(
+                account_id=trade.account_id,
+                symbol=trade.symbol,
+                trade_type='Covered Call',
+                position_type='Close',
+                strike_price=trade.strike_price,
+                expiration_date=trade.expiration_date,
+                contract_quantity=contract_quantity,
+                trade_price=None,
+                trade_action=trade.trade_action,
+                premium=0,  # Assignment has no closing premium
+                fees=0,
+                trade_date=assignment_date,
+                open_date=trade.trade_date,
+                close_date=assignment_date,
+                status='Assigned',
+                parent_trade_id=trade.id,
+                stock_position_id=trade.stock_position_id,
+                shares_used=contract_quantity * 100,  # Shares used by this partial assignment
+                assignment_price=assignment_price,
+                close_method='assigned',
+                notes=data.get('notes')
+            )
+            db.session.add(closing_trade)
+            db.session.commit()
+            return jsonify(closing_trade.to_dict(include_realized_pnl=True)), 201
+        else:
+            # Full assignment - trade is updated directly
+            db.session.commit()
+            return jsonify(trade.to_dict(include_realized_pnl=True)), 200
 
 def handle_exercise(trade, data):
     """Handle Exercise for LEAPS - creates stock position"""

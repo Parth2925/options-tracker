@@ -67,12 +67,13 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
     trade_date: getTodayLocalDate(),
     stock_position_id: '',
     notes: '',
-    // Close details (for editing closed trades)
-    close_date: '',
-    close_price: '',
-    close_fees: '',
-    close_premium: '',
-    close_method: '',
+        // Close details (for editing closed trades)
+        close_date: '',
+        close_price: '',
+        close_fees: '',
+        close_premium: '',
+        close_method: '',
+        assignment_price: '',
   });
 
   // Initialize form data if editing
@@ -97,6 +98,7 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
         close_fees: trade.close_fees || '',
         close_premium: trade.close_premium || '',
         close_method: trade.close_method || '',
+        assignment_price: trade.assignment_price || '',
       });
     } else {
       // For new trades, auto-populate fees from account if available
@@ -469,6 +471,7 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
         payload.close_method = formData.close_method || null;
         payload.close_price = formData.close_price ? parseFloat(formData.close_price) : null;
         payload.close_fees = formData.close_fees ? parseFloat(formData.close_fees) : null;
+        payload.assignment_price = formData.assignment_price ? parseFloat(formData.assignment_price) : null;
         // Only send close_premium if user explicitly entered a value (not empty string)
         // This allows backend to auto-calculate when close_price or close_fees change
         if (formData.close_premium && formData.close_premium !== '') {
