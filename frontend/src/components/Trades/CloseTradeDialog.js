@@ -67,11 +67,17 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
         { value: 'expired', label: 'Expired' },
         { value: 'exercise', label: 'Exercise' }
       ];
-    } else if (trade.trade_type === 'CSP' || trade.trade_type === 'Covered Call') {
+    } else if (trade.trade_type === 'CSP') {
       return [
         { value: 'buy_to_close', label: 'Buy to Close' },
         { value: 'expired', label: 'Expired' },
         { value: 'assigned', label: 'Assigned' }
+      ];
+    } else if (trade.trade_type === 'Covered Call') {
+      return [
+        { value: 'buy_to_close', label: 'Buy to Close' },
+        { value: 'expired', label: 'Expired' },
+        { value: 'called_away', label: 'Called Away' }
       ];
     }
     return [];
@@ -164,14 +170,14 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
           errors.fees = 'Fees must be 0 or greater';
         }
       }
-    } else if (formData.close_method === 'assigned') {
+    } else if (formData.close_method === 'assigned' || formData.close_method === 'called_away') {
       const assignmentPriceStr = String(formData.assignment_price || '').trim();
       if (!assignmentPriceStr) {
-        errors.assignment_price = 'Assignment price is required';
+        errors.assignment_price = formData.close_method === 'called_away' ? 'Call price is required' : 'Assignment price is required';
       } else {
         const price = parseFloat(assignmentPriceStr);
         if (isNaN(price) || price <= 0) {
-          errors.assignment_price = 'Assignment price must be a positive number';
+          errors.assignment_price = formData.close_method === 'called_away' ? 'Call price must be a positive number' : 'Assignment price must be a positive number';
         }
       }
     }
@@ -209,7 +215,7 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
       if (formData.close_method === 'buy_to_close' || formData.close_method === 'sell_to_close') {
         payload.trade_price = parseFloat(formData.trade_price);
         payload.fees = parseFloat(formData.fees) || 0;
-      } else if (formData.close_method === 'assigned') {
+      } else if (formData.close_method === 'assigned' || formData.close_method === 'called_away') {
         payload.assignment_price = parseFloat(formData.assignment_price);
       }
 
@@ -226,7 +232,7 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
   };
 
   const requiresTradePrice = formData.close_method === 'buy_to_close' || formData.close_method === 'sell_to_close';
-  const requiresAssignmentPrice = formData.close_method === 'assigned';
+  const requiresAssignmentPrice = formData.close_method === 'assigned' || formData.close_method === 'called_away';
 
   return (
     <div 
@@ -348,7 +354,7 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
 
               {requiresAssignmentPrice && (
                 <div className="form-group">
-                  <label>Assignment Price *</label>
+                  <label>{formData.close_method === 'called_away' ? 'Call Price *' : 'Assignment Price *'}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -360,7 +366,9 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
                     className={fieldErrors.assignment_price ? 'error-field' : ''}
                   />
                   <small style={{ color: '#666', fontSize: '12px' }}>
-                    Defaults to strike price: ${trade.strike_price || 'N/A'}
+                    {formData.close_method === 'called_away' 
+                      ? `Price at which shares were called away (usually the strike price): $${trade.strike_price || 'N/A'}`
+                      : `Defaults to strike price: $${trade.strike_price || 'N/A'}`}
                   </small>
                   {fieldErrors.assignment_price && (
                     <div className="field-error">{fieldErrors.assignment_price}</div>

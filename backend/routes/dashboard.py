@@ -26,8 +26,8 @@ def calculate_wheel_pnl(trades):
         # Use the trade's own realized P&L calculation method
         trade_realized = trade.calculate_realized_pnl()
         
-        if trade.status in ['Closed', 'Assigned', 'Expired']:
-            # Realized P&L for closed/assigned trades
+        if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+            # Realized P&L for closed/assigned/called away trades
             realized_pnl += trade_realized
         else:
             # Unrealized P&L for open trades
@@ -119,7 +119,7 @@ def get_positions():
     ]
     
     open_trades = [t.to_dict() for t in filtered_trades if t.status == 'Open']
-    closed_trades = [t.to_dict() for t in filtered_trades if t.status in ['Closed', 'Assigned', 'Expired']]
+    closed_trades = [t.to_dict() for t in filtered_trades if t.status in ['Closed', 'Assigned', 'Called Away', 'Expired']]
     
     return jsonify({
         'open': open_trades,

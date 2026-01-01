@@ -820,6 +820,8 @@ def import_trades():
                     trade.status = 'Expired'
                 elif trade.close_method == 'assigned':
                     trade.status = 'Assigned'
+                elif trade.close_method == 'called_away':
+                    trade.status = 'Called Away'
                 elif trade.close_method in ['buy_to_close', 'sell_to_close', 'exercise']:
                     trade.status = 'Closed'
                 elif not trade.status or trade.status == 'Open':
@@ -1316,9 +1318,12 @@ def close_trade(trade_id):
         if trade.trade_type == 'LEAPS':
             if close_method not in ['sell_to_close', 'expired', 'exercise']:
                 return jsonify({'error': f'Invalid close method for LEAPS trades. Please select: Sell to Close, Expired, or Exercise'}), 400
-        elif trade.trade_type in ['CSP', 'Covered Call']:
+        elif trade.trade_type == 'CSP':
             if close_method not in ['buy_to_close', 'expired', 'assigned']:
-                return jsonify({'error': f'Invalid close method for {trade.trade_type} trades. Please select: Buy to Close, Expired, or Assigned'}), 400
+                return jsonify({'error': f'Invalid close method for CSP trades. Please select: Buy to Close, Expired, or Assigned'}), 400
+        elif trade.trade_type == 'Covered Call':
+            if close_method not in ['buy_to_close', 'expired', 'called_away']:
+                return jsonify({'error': f'Invalid close method for Covered Call trades. Please select: Buy to Close, Expired, or Called Away'}), 400
         else:
             return jsonify({'error': f'Close workflow is not supported for {trade.trade_type} trades'}), 400
         
@@ -1331,6 +1336,8 @@ def close_trade(trade_id):
             return handle_expired(trade, data)
         elif close_method == 'assigned':
             return handle_assigned(trade, data)
+        elif close_method == 'called_away':
+            return handle_called_away(trade, data)
         elif close_method == 'exercise':
             return handle_exercise(trade, data)
         else:
@@ -1665,89 +1672,111 @@ def handle_assigned(trade, data):
         
         db.session.commit()
         return jsonify(assignment_trade.to_dict(include_realized_pnl=True)), 201
+
+def handle_called_away(trade, data):
+    """Handle Called Away - for Covered Call, shares are called away (sold)"""
+    if trade.trade_type != 'Covered Call':
+        return jsonify({'error': 'Called Away method is only for Covered Call trades'}), 400
     
-    # Handle Covered Call assignment (returns shares to stock position)
-    elif trade.trade_type == 'Covered Call':
-        # Verify the covered call has a stock position
-        if not trade.stock_position_id:
-            return jsonify({'error': 'Covered Call trade must be linked to a stock position'}), 400
-        
-        stock_position = StockPosition.query.get(trade.stock_position_id)
-        if not stock_position:
-            return jsonify({'error': 'Stock position not found'}), 404
-        
-        # Calculate shares being called away
-        shares_called_away = contract_quantity * 100
-        
-        # Verify enough shares are available in the stock position
-        if shares_called_away > stock_position.shares:
-            return jsonify({'error': f'Insufficient shares in stock position. Need {shares_called_away} shares, but only {stock_position.shares} available.'}), 400
-        
-        # Update parent Covered Call
-        total_assigned = remaining_qty - contract_quantity
-        is_full_assignment = total_assigned <= 0
-        
-        if is_full_assignment:
-            # FULL ASSIGNMENT: Update original Covered Call directly (single-entry approach)
-            trade.status = 'Assigned'
-            trade.close_date = assignment_date
-            trade.assignment_price = assignment_price
-            trade.close_method = 'assigned'
-            trade.close_price = None  # No closing price for assignment
-            trade.close_fees = 0
-            trade.close_premium = 0  # Assignment has no closing premium (shares are called away at strike)
-            if data.get('notes'):
-                trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
-        else:
-            # PARTIAL ASSIGNMENT: Keep parent open (this creates a new closing trade entry)
-            # For partial assignments, we'll keep the parent open and create a closing trade
-            trade.status = 'Open'
-            trade.close_date = None
-            trade.assignment_price = assignment_price
-        
-        if not trade.open_date:
-            trade.open_date = trade.trade_date
-        
-        # Reduce stock position shares - shares are called away (sold) when assigned
-        stock_position.shares -= shares_called_away
-        
-        # If all shares are called away, mark the position as closed/called away
-        if stock_position.shares <= 0:
-            stock_position.shares = 0  # Ensure it doesn't go negative
-            stock_position.status = 'Called Away'
-        
-        # If this is a partial assignment, create a closing trade entry
-        if not is_full_assignment:
-            closing_trade = Trade(
-                account_id=trade.account_id,
-                symbol=trade.symbol,
-                trade_type='Covered Call',
-                position_type='Close',
-                strike_price=trade.strike_price,
-                expiration_date=trade.expiration_date,
-                contract_quantity=contract_quantity,
-                trade_price=None,
-                trade_action=trade.trade_action,
-                premium=0,  # Assignment has no closing premium
-                fees=0,
-                trade_date=assignment_date,
-                open_date=trade.trade_date,
-                close_date=assignment_date,
-                status='Assigned',
-                parent_trade_id=trade.id,
-                stock_position_id=trade.stock_position_id,
-                shares_used=contract_quantity * 100,  # Shares used by this partial assignment
-                assignment_price=assignment_price,
-                close_method='assigned',
-                notes=data.get('notes')
-            )
-            db.session.add(closing_trade)
-            db.session.commit()
-            return jsonify(closing_trade.to_dict(include_realized_pnl=True)), 201
-        else:
-            # Full assignment - trade is updated directly
-            db.session.commit()
-            return jsonify(trade.to_dict(include_realized_pnl=True)), 200
+    # Get remaining quantity
+    remaining_qty = trade.get_remaining_open_quantity()
+    if remaining_qty <= 0:
+        return jsonify({'error': 'No contracts remaining to call away'}), 400
+    
+    # Use provided quantity or default to remaining
+    contract_quantity = data.get('contract_quantity', remaining_qty)
+    if contract_quantity > remaining_qty:
+        return jsonify({'error': f'Cannot call away {contract_quantity} contracts. Only {remaining_qty} contracts remaining open.'}), 400
+    
+    assignment_date = datetime.strptime(
+        data.get('close_date', trade.expiration_date.isoformat() if trade.expiration_date else datetime.now().date().isoformat()),
+        '%Y-%m-%d'
+    ).date()
+    
+    assignment_price = float(data.get('assignment_price', trade.strike_price)) if data.get('assignment_price') or trade.strike_price else None
+    if not assignment_price:
+        return jsonify({'error': 'assignment_price is required'}), 400
+    
+    # Verify the covered call has a stock position
+    if not trade.stock_position_id:
+        return jsonify({'error': 'Covered Call trade must be linked to a stock position'}), 400
+    
+    stock_position = StockPosition.query.get(trade.stock_position_id)
+    if not stock_position:
+        return jsonify({'error': 'Stock position not found'}), 404
+    
+    # Calculate shares being called away
+    shares_called_away = contract_quantity * 100
+    
+    # Verify enough shares are available in the stock position
+    if shares_called_away > stock_position.shares:
+        return jsonify({'error': f'Insufficient shares in stock position. Need {shares_called_away} shares, but only {stock_position.shares} available.'}), 400
+    
+    # Update parent Covered Call
+    total_called_away = remaining_qty - contract_quantity
+    is_full_call_away = total_called_away <= 0
+    
+    if is_full_call_away:
+        # FULL CALL AWAY: Update original Covered Call directly (single-entry approach)
+        trade.status = 'Called Away'
+        trade.close_date = assignment_date
+        trade.assignment_price = assignment_price
+        trade.close_method = 'called_away'
+        trade.close_price = None  # No closing price for called away
+        trade.close_fees = 0
+        trade.close_premium = 0  # Called away has no closing premium (shares are called away at strike)
+        if data.get('notes'):
+            trade.notes = (trade.notes or '') + f'\n{data["notes"]}'
+    else:
+        # PARTIAL CALL AWAY: Keep parent open (this creates a new closing trade entry)
+        # For partial call aways, we'll keep the parent open and create a closing trade
+        trade.status = 'Open'
+        trade.close_date = None
+        trade.assignment_price = assignment_price
+    
+    if not trade.open_date:
+        trade.open_date = trade.trade_date
+    
+    # Reduce stock position shares - shares are called away (sold)
+    stock_position.shares -= shares_called_away
+    
+    # If all shares are called away, mark the position as closed/called away
+    if stock_position.shares <= 0:
+        stock_position.shares = 0  # Ensure it doesn't go negative
+        stock_position.status = 'Called Away'
+    
+    # If this is a partial call away, create a closing trade entry
+    if not is_full_call_away:
+        closing_trade = Trade(
+            account_id=trade.account_id,
+            symbol=trade.symbol,
+            trade_type='Covered Call',
+            position_type='Close',
+            strike_price=trade.strike_price,
+            expiration_date=trade.expiration_date,
+            contract_quantity=contract_quantity,
+            trade_price=None,
+            trade_action=trade.trade_action,
+            premium=0,  # Called away has no closing premium
+            fees=0,
+            trade_date=assignment_date,
+            open_date=trade.trade_date,
+            close_date=assignment_date,
+            status='Called Away',
+            parent_trade_id=trade.id,
+            stock_position_id=trade.stock_position_id,
+            shares_used=contract_quantity * 100,  # Shares used by this partial call away
+            assignment_price=assignment_price,
+            close_method='called_away',
+            notes=data.get('notes')
+        )
+        db.session.add(closing_trade)
+        db.session.commit()
+        return jsonify(closing_trade.to_dict(include_realized_pnl=True)), 201
+    else:
+        # Full call away - trade is updated directly
+        db.session.commit()
+        return jsonify(trade.to_dict(include_realized_pnl=True)), 200
 
 def handle_exercise(trade, data):
     """Handle Exercise for LEAPS - creates stock position"""

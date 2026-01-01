@@ -20,6 +20,11 @@
   color: #856404;
 }
 
+.status-called-away {
+  background-color: #ffeaa7;
+  color: #856404;
+}
+
 .sortable-header {
   position: relative;
   transition: background-color 0.2s;

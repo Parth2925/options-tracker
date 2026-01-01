@@ -756,9 +756,9 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
                   </select>
                 </div>
 
-                {formData.close_method === 'assigned' && (
+                {(formData.close_method === 'assigned' || formData.close_method === 'called_away') && (
                   <div className="form-group">
-                    <label>Assignment Price *</label>
+                    <label>{formData.close_method === 'called_away' ? 'Call Price *' : 'Assignment Price *'}</label>
                     <input
                       type="number"
                       name="assignment_price"
@@ -769,12 +769,14 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
                       required
                     />
                     <small style={{ display: 'block', marginTop: '4px', color: 'var(--text-secondary)', fontSize: '12px' }}>
-                      Price at which shares were assigned (usually the strike price)
+                      {formData.close_method === 'called_away' 
+                        ? 'Price at which shares were called away (usually the strike price)'
+                        : 'Price at which shares were assigned (usually the strike price)'}
                     </small>
                   </div>
                 )}
 
-                {formData.close_method && formData.close_method !== 'expired' && formData.close_method !== 'assigned' && formData.close_method !== 'exercise' && (
+                {formData.close_method && formData.close_method !== 'expired' && formData.close_method !== 'assigned' && formData.close_method !== 'called_away' && formData.close_method !== 'exercise' && (
                   <>
                     <div className="form-group">
                       <label>Close Price (per contract)</label>

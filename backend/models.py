@@ -191,10 +191,10 @@ class Trade(db.Model):
     close_price = db.Column(db.Numeric(10, 2))  # Price per contract when closed (for single-entry closes)
     close_fees = db.Column(db.Numeric(10, 2))  # Fees when closed (for single-entry closes)
     close_premium = db.Column(db.Numeric(15, 2))  # Calculated closing premium (for single-entry closes)
-    close_method = db.Column(db.String(20))  # 'buy_to_close', 'sell_to_close', 'expired', 'assigned', 'exercise'
+    close_method = db.Column(db.String(20))  # 'buy_to_close', 'sell_to_close', 'expired', 'assigned', 'called_away', 'exercise'
     
     # Status
-    status = db.Column(db.String(20), default='Open')  # 'Open', 'Closed', 'Assigned', 'Expired'
+    status = db.Column(db.String(20), default='Open')  # 'Open', 'Closed', 'Assigned', 'Called Away', 'Expired'
     
     # Relationships for wheel strategy
     parent_trade_id = db.Column(db.Integer, db.ForeignKey('trades.id'))  # For rollovers/assignments
@@ -222,8 +222,8 @@ class Trade(db.Model):
         realized_pnl = 0
         
         # Scenario 1a: Single-entry close (trade has close_premium - full close, updated directly)
-        # BUT: Exclude assigned covered calls - they need special handling for stock appreciation (handled in Scenario 4)
-        if self.close_date and self.close_premium is not None and not self.parent_trade_id and not (self.trade_type == 'Covered Call' and self.close_method == 'assigned'):
+        # BUT: Exclude called away covered calls - they need special handling for stock appreciation (handled in Scenario 4)
+        if self.close_date and self.close_premium is not None and not self.parent_trade_id and not (self.trade_type == 'Covered Call' and (self.close_method == 'assigned' or self.close_method == 'called_away')):
             # This is an opening trade that was closed directly (single-entry approach)
             opening_premium = float(self.premium) if self.premium else 0
             closing_premium = float(self.close_premium)
@@ -260,11 +260,12 @@ class Trade(db.Model):
         # Scenario 1c: Opening trade with child closing trades (two-entry approach - parent calculates from children)
         elif self.trade_action in ['Sold to Open', 'Bought to Open'] and self.child_trades:
             # Find all closing trades (children that closed this position)
-            # Include: Buy/Sell to Close, Expired, Assigned, Exercise
+            # Include: Buy/Sell to Close, Expired, Assigned, Called Away, Exercise
             closing_trades = [child for child in self.child_trades 
                              if (child.trade_action in ['Bought to Close', 'Sold to Close']) or
                                 (child.status == 'Expired') or
                                 (child.status == 'Assigned' or child.trade_type == 'Assignment') or
+                                (child.status == 'Called Away' or child.close_method == 'called_away') or
                                 (child.status == 'Closed' and child.close_method == 'exercise')]
             if closing_trades:
                 # Calculate total P&L from all closing trades
@@ -313,8 +314,8 @@ class Trade(db.Model):
             opening_premium = float(self.premium) if self.premium else 0
             realized_pnl = opening_premium
         
-        # Scenario 4: Covered call was assigned (shares called away)
-        elif self.trade_type == 'Covered Call' and self.status == 'Assigned':
+        # Scenario 4: Covered call was called away (shares called away)
+        elif self.trade_type == 'Covered Call' and (self.status == 'Called Away' or self.status == 'Assigned' or self.close_method == 'called_away'):
             # Premium from covered call
             call_premium = float(self.premium) if self.premium else 0
             
@@ -414,11 +415,13 @@ class Trade(db.Model):
         # - Buy/Sell to Close (trade_action based)
         # - Expired (status='Expired')
         # - Assigned (status='Assigned' or trade_type='Assignment')
+        # - Called Away (status='Called Away' or close_method='called_away')
         # - Exercise (status='Closed' with close_method='exercise')
         closing_trades = [child for child in self.child_trades 
                          if (child.trade_action in ['Bought to Close', 'Sold to Close']) or
                             (child.status == 'Expired') or
                             (child.status == 'Assigned' or child.trade_type == 'Assignment') or
+                            (child.status == 'Called Away' or child.close_method == 'called_away') or
                             (child.status == 'Closed' and child.close_method == 'exercise')]
         total_closed_qty = sum(child.contract_quantity for child in closing_trades)
         remaining = self.contract_quantity - total_closed_qty
@@ -525,9 +528,11 @@ class Trade(db.Model):
         if self.trade_action in ['Bought to Close', 'Sold to Close']:
             return 'Closed'
         
-        # If status is explicitly set to Assigned, keep it
+        # If status is explicitly set to Assigned or Called Away, keep it
         if self.status == 'Assigned':
             return 'Assigned'
+        if self.status == 'Called Away':
+            return 'Called Away'
         
         # If it's an assignment trade, it's assigned
         if self.trade_type == 'Assignment':

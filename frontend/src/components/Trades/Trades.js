@@ -560,6 +560,7 @@ function Trades() {
                 <option value="open">Open</option>
                 <option value="closed">Closed</option>
                 <option value="assigned">Assigned</option>
+                <option value="called away">Called Away</option>
                 <option value="expired">Expired</option>
               </select>
             </div>
@@ -694,8 +695,8 @@ function Trades() {
                     </tr>
                   ) : (
                     paginatedTrades.map((trade) => {
-                      // Determine if trade is closed/assigned for visual styling
-                      const isClosed = trade.status === 'Closed' || trade.status === 'Assigned' || trade.status === 'Expired';
+                      // Determine if trade is closed/assigned/called away for visual styling
+                      const isClosed = trade.status === 'Closed' || trade.status === 'Assigned' || trade.status === 'Called Away' || trade.status === 'Expired';
                       return (
                     <tr 
                       key={trade.id}
@@ -778,7 +779,7 @@ function Trades() {
                       <td>
                         <div className="trade-actions-cell">
                           <div className="trade-actions-primary">
-                            {(trade.status === 'Open' || trade.status === 'Assigned') && 
+                            {(trade.status === 'Open') && 
                              (trade.trade_type === 'CSP' || trade.trade_type === 'Covered Call' || trade.trade_type === 'LEAPS') &&
                              trade.trade_action && 
                              (trade.trade_action === 'Sold to Open' || trade.trade_action === 'Bought to Open') && (
