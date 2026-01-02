@@ -50,13 +50,21 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
     return account?.default_fee || 0;
   };
 
+  // Get account's default assignment fee
+  const getAccountDefaultAssignmentFee = () => {
+    if (!accounts || !trade.account_id) return 0;
+    const account = accounts.find(acc => acc.id === trade.account_id);
+    return account?.assignment_fee || 0;
+  };
+
   const [formData, setFormData] = useState({
     close_method: '',
     close_date: trade.expiration_date ? trade.expiration_date.split('T')[0] : new Date().toISOString().split('T')[0],
     trade_price: '',
     fees: '',
     contract_quantity: trade.remaining_open_quantity || trade.contract_quantity || 1,
-    assignment_price: trade.strike_price ? String(trade.strike_price) : '',
+    assignment_price: trade.strike_price ? String(trade.strike_price) : '', // Read-only, always equals strike
+    assignment_fee: '',
     notes: ''
   });
 
@@ -101,9 +109,23 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
           updated.fees = defaultFee > 0 ? defaultFee.toString() : '';
         }
       }
+      // Auto-populate assignment fee when close_method changes to assigned or called_away
+      else if (name === 'close_method' && (value === 'assigned' || value === 'called_away')) {
+        const defaultAssignmentFee = getAccountDefaultAssignmentFee();
+        // Only set if assignment_fee field is currently empty (allows user override)
+        if (!prev.assignment_fee || prev.assignment_fee === '') {
+          updated.assignment_fee = defaultAssignmentFee > 0 ? defaultAssignmentFee.toString() : '';
+        }
+        // Assignment price always equals strike price (read-only)
+        updated.assignment_price = trade.strike_price ? String(trade.strike_price) : '';
+      }
       // Clear fees if close_method changes to something that doesn't have fees
       else if (name === 'close_method' && value !== 'buy_to_close' && value !== 'sell_to_close') {
         updated.fees = '';
+      }
+      // Clear assignment fee if close_method changes to something that doesn't have assignment
+      if (name === 'close_method' && value !== 'assigned' && value !== 'called_away') {
+        updated.assignment_fee = '';
       }
       
       return updated;
@@ -171,13 +193,12 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
         }
       }
     } else if (formData.close_method === 'assigned' || formData.close_method === 'called_away') {
-      const assignmentPriceStr = String(formData.assignment_price || '').trim();
-      if (!assignmentPriceStr) {
-        errors.assignment_price = formData.close_method === 'called_away' ? 'Call price is required' : 'Assignment price is required';
-      } else {
-        const price = parseFloat(assignmentPriceStr);
-        if (isNaN(price) || price <= 0) {
-          errors.assignment_price = formData.close_method === 'called_away' ? 'Call price must be a positive number' : 'Assignment price must be a positive number';
+      // Assignment price is always strike price (read-only), no validation needed
+      // Validate assignment fee if provided
+      if (formData.assignment_fee && formData.assignment_fee.trim() !== '') {
+        const fee = parseFloat(formData.assignment_fee);
+        if (isNaN(fee) || fee < 0) {
+          errors.assignment_fee = 'Assignment fee must be 0 or greater';
         }
       }
     }
@@ -216,7 +237,9 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
         payload.trade_price = parseFloat(formData.trade_price);
         payload.fees = parseFloat(formData.fees) || 0;
       } else if (formData.close_method === 'assigned' || formData.close_method === 'called_away') {
+        // Assignment price is always strike price (enforced on backend), but we still send it
         payload.assignment_price = parseFloat(formData.assignment_price);
+        payload.assignment_fee = parseFloat(formData.assignment_fee) || 0;
       }
 
       await api.post(`/trades/${trade.id}/close`, payload);
@@ -353,27 +376,45 @@ function CloseTradeDialog({ trade, accounts, onSuccess, onCancel }) {
               )}
 
               {requiresAssignmentPrice && (
-                <div className="form-group">
-                  <label>{formData.close_method === 'called_away' ? 'Call Price *' : 'Assignment Price *'}</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="assignment_price"
-                    value={formData.assignment_price}
-                    onChange={handleChange}
-                    required
-                    placeholder={trade.strike_price || '0.00'}
-                    className={fieldErrors.assignment_price ? 'error-field' : ''}
-                  />
-                  <small style={{ color: '#666', fontSize: '12px' }}>
-                    {formData.close_method === 'called_away' 
-                      ? `Price at which shares were called away (usually the strike price): $${trade.strike_price || 'N/A'}`
-                      : `Defaults to strike price: $${trade.strike_price || 'N/A'}`}
-                  </small>
-                  {fieldErrors.assignment_price && (
-                    <div className="field-error">{fieldErrors.assignment_price}</div>
-                  )}
-                </div>
+                <>
+                  <div className="form-group">
+                    <label>{formData.close_method === 'called_away' ? 'Call Price *' : 'Assignment Price *'}</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      name="assignment_price"
+                      value={formData.assignment_price}
+                      readOnly
+                      disabled
+                      className="read-only-field"
+                      style={{ backgroundColor: '#f5f5f5', cursor: 'not-allowed' }}
+                    />
+                    <small style={{ color: '#666', fontSize: '12px' }}>
+                      {formData.close_method === 'called_away' 
+                        ? `Options are always called away at the strike price: $${trade.strike_price || 'N/A'}`
+                        : `Options are always assigned at the strike price: $${trade.strike_price || 'N/A'}`}
+                    </small>
+                  </div>
+                  <div className="form-group">
+                    <label>Assignment Fee</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      name="assignment_fee"
+                      value={formData.assignment_fee}
+                      onChange={handleChange}
+                      min="0"
+                      placeholder="0.00"
+                      className={fieldErrors.assignment_fee ? 'error-field' : ''}
+                    />
+                    <small style={{ color: '#666', fontSize: '12px' }}>
+                      Fee charged by your broker for assignment/exercise (typically $15-25). Auto-populated from account default if set.
+                    </small>
+                    {fieldErrors.assignment_fee && (
+                      <div className="field-error">{fieldErrors.assignment_fee}</div>
+                    )}
+                  </div>
+                </>
               )}
 
               <div className="form-group">

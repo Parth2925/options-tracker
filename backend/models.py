@@ -49,6 +49,7 @@ class Account(db.Model):
     account_type = db.Column(db.String(50))  # e.g., 'IRA', 'Taxable', 'Margin'
     initial_balance = db.Column(db.Numeric(15, 2), default=0)
     default_fee = db.Column(db.Numeric(10, 2), default=0)  # Default fee per contract for this account
+    assignment_fee = db.Column(db.Numeric(10, 2), default=0)  # Default assignment/exercise fee for this account
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -64,6 +65,7 @@ class Account(db.Model):
             'account_type': self.account_type,
             'initial_balance': float(self.initial_balance) if self.initial_balance else 0,
             'default_fee': float(self.default_fee) if self.default_fee else 0,
+            'assignment_fee': float(self.assignment_fee) if self.assignment_fee else 0,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
@@ -192,6 +194,7 @@ class Trade(db.Model):
     close_fees = db.Column(db.Numeric(10, 2))  # Fees when closed (for single-entry closes)
     close_premium = db.Column(db.Numeric(15, 2))  # Calculated closing premium (for single-entry closes)
     close_method = db.Column(db.String(20))  # 'buy_to_close', 'sell_to_close', 'expired', 'assigned', 'called_away', 'exercise'
+    assignment_fee = db.Column(db.Numeric(10, 2), default=0)  # Assignment/exercise fee (for assigned/called away trades)
     
     # Status
     status = db.Column(db.String(20), default='Open')  # 'Open', 'Closed', 'Assigned', 'Called Away', 'Expired'
@@ -310,14 +313,16 @@ class Trade(db.Model):
         
         # Scenario 3: CSP was assigned - keep the premium, stock position created
         elif self.trade_type == 'CSP' and self.status == 'Assigned':
-            # Keep the premium received
+            # Keep the premium received, subtract assignment fee
             opening_premium = float(self.premium) if self.premium else 0
-            realized_pnl = opening_premium
+            assignment_fee = float(self.assignment_fee) if self.assignment_fee else 0
+            realized_pnl = opening_premium - assignment_fee
         
         # Scenario 4: Covered call was called away (shares called away)
         elif self.trade_type == 'Covered Call' and (self.status == 'Called Away' or self.status == 'Assigned' or self.close_method == 'called_away'):
             # Premium from covered call
             call_premium = float(self.premium) if self.premium else 0
+            assignment_fee = float(self.assignment_fee) if self.assignment_fee else 0
             
             # Use actual cost basis from stock position if available
             if self.stock_position_id and self.strike_price:
@@ -327,12 +332,12 @@ class Trade(db.Model):
                     # Stock appreciation: (Call Strike - Cost Basis) × Quantity × 100
                     cost_basis = float(stock_position.cost_basis_per_share)
                     stock_appreciation = (float(self.strike_price) - cost_basis) * self.contract_quantity * 100
-                    realized_pnl = call_premium + stock_appreciation
+                    realized_pnl = call_premium + stock_appreciation - assignment_fee
                 elif self.strike_price:
                     # Fallback: if no stock position, just use premium
-                    realized_pnl = call_premium
+                    realized_pnl = call_premium - assignment_fee
                 else:
-                    realized_pnl = call_premium
+                    realized_pnl = call_premium - assignment_fee
             else:
                 # Fallback: try to find assignment trade (legacy support)
                 assignment_trade = None
@@ -343,10 +348,10 @@ class Trade(db.Model):
                 if assignment_trade and assignment_trade.trade_type == 'Assignment' and assignment_trade.assignment_price and self.strike_price:
                     # Stock appreciation: (Call Strike - Assignment Price) × Quantity × 100
                     stock_appreciation = (float(self.strike_price) - float(assignment_trade.assignment_price)) * self.contract_quantity * 100
-                    realized_pnl = call_premium + stock_appreciation
+                    realized_pnl = call_premium + stock_appreciation - assignment_fee
                 else:
                     # Just the premium if we can't find assignment details
-                    realized_pnl = call_premium
+                    realized_pnl = call_premium - assignment_fee
         
         # Scenario 5: Assignment trade itself - calculate P&L when closed
         elif self.trade_type == 'Assignment':
@@ -609,6 +614,7 @@ class Trade(db.Model):
             'close_fees': float(self.close_fees) if self.close_fees else None,
             'close_premium': float(self.close_premium) if self.close_premium else None,
             'close_method': self.close_method,
+            'assignment_fee': float(self.assignment_fee) if self.assignment_fee else 0,
             'status': self.status,
             'parent_trade_id': self.parent_trade_id,
             'stock_position_id': self.stock_position_id,
