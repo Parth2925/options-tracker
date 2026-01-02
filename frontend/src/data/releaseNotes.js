@@ -116,6 +116,18 @@ export const releaseNotes = {
       "Fixed P&L accuracy for assigned positions by accounting for assignment fees",
       "Prevented user errors by enforcing assignment price equals strike price (options trading rule)"
     ]
+  },
+  "1.5.1": {
+    date: "2025-01-01",
+    features: [],
+    improvements: [
+      "Historical Trade Entry: Users can now enter trades with past expiration dates without them being auto-marked as 'Closed'",
+      "Improved Status Management: System now respects explicitly set 'Open' status for historical entries, allowing users to enter past trades and close them later"
+    ],
+    bugfixes: [
+      "Fixed issue where trades with past expiration dates were automatically marked as 'Closed' when entered, preventing historical data entry",
+      "Resolved problem where users couldn't enter historical covered calls or other trades that expired in the past but were closed before expiration"
+    ]
   }
 };
 

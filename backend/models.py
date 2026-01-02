@@ -545,10 +545,16 @@ class Trade(db.Model):
             return 'Assigned'
         
         # If expiration date has passed and no close_date, check status
+        # IMPORTANT: For historical data entry, if status is explicitly 'Open', respect it
+        # This allows users to enter past trades that haven't been closed yet
         if self.expiration_date and self.expiration_date < today:
             # Check if there's an assignment trade linked (child trade)
             if any(child.trade_type == 'Assignment' for child in self.child_trades):
                 return 'Assigned'
+            # If status is explicitly 'Open' and no close_date, this is likely historical data entry
+            # Respect the user's explicit status choice
+            elif self.status == 'Open' and not self.close_date:
+                return 'Open'  # Respect explicit status for historical entries
             else:
                 # Expired worthless - keep premium, mark as closed
                 return 'Closed'

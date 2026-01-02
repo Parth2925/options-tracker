@@ -105,6 +105,15 @@ def get_trades():
                 # This is likely a manually marked expired worthless trade - don't override
                 continue
             
+            # IMPORTANT: For historical data entry, if status is 'Open' and expiration_date is in the past
+            # but no close_date is set, respect the explicit 'Open' status
+            # This allows users to enter past trades that haven't been closed yet
+            from datetime import date
+            today = date.today()
+            if trade.status == 'Open' and trade.expiration_date and trade.expiration_date < today and not trade.close_date:
+                # This is likely a historical entry - respect the explicit status
+                continue
+            
             new_status = trade.auto_determine_status()
             if new_status != trade.status:
                 trade.status = new_status
@@ -302,9 +311,27 @@ def create_trade():
             # Also ensure close_date is set if not provided
             if not trade.close_date:
                 trade.close_date = trade.trade_date
-        # Auto-determine status for other trades if not explicitly set
-        elif not data.get('status'):
-            trade.status = trade.auto_determine_status()
+        # For opening trades, handle status determination
+        # IMPORTANT: For historical data entry, if expiration_date is in the past but no close_date,
+        # default to 'Open' to allow users to enter past trades and close them later
+        elif trade.trade_action in ['Sold to Open', 'Bought to Open']:
+            from datetime import date
+            today = date.today()
+            # If status is explicitly provided, use it (allows historical data entry)
+            if data.get('status'):
+                trade.status = data.get('status')
+            # If expiration_date is in the past but no close_date, default to 'Open' for historical entries
+            elif trade.expiration_date and trade.expiration_date < today and not trade.close_date:
+                trade.status = 'Open'  # Default to Open for historical entries
+            else:
+                # For new trades or trades with future expiration, auto-determine status
+                trade.status = trade.auto_determine_status()
+        # For other trade types, use provided status or auto-determine
+        else:
+            if data.get('status'):
+                trade.status = data.get('status')
+            else:
+                trade.status = trade.auto_determine_status()
         
         # If this is a closing trade, update parent status and dates BEFORE commit
         # This ensures parent status is correct when we commit
