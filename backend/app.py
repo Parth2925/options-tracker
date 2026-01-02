@@ -206,6 +206,23 @@ def initialize_database():
                         conn.execute(text("ALTER TABLE trades ADD COLUMN assignment_price NUMERIC(10, 2)"))
                         conn.commit()
                         print("✓ Added assignment_price column")
+                    
+                    if 'assignment_fee' not in columns:
+                        print("Adding assignment_fee column to trades table...")
+                        conn.execute(text("ALTER TABLE trades ADD COLUMN assignment_fee NUMERIC(10, 2) DEFAULT 0"))
+                        conn.commit()
+                        print("✓ Added assignment_fee column to trades table")
+            
+            # Check if accounts table exists and add assignment_fee if needed
+            if 'accounts' in inspector.get_table_names():
+                accounts_columns = [col['name'] for col in inspector.get_columns('accounts')]
+                
+                with db.engine.connect() as conn:
+                    if 'assignment_fee' not in accounts_columns:
+                        print("Adding assignment_fee column to accounts table...")
+                        conn.execute(text("ALTER TABLE accounts ADD COLUMN assignment_fee NUMERIC(10, 2) DEFAULT 0"))
+                        conn.commit()
+                        print("✓ Added assignment_fee column to accounts table")
             
             # Check if users table exists and add new columns if needed
             if 'users' in inspector.get_table_names():
