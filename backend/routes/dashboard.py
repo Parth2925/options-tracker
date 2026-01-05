@@ -76,8 +76,9 @@ def get_total_capital(account_id, user_id):
     # Calculate realized P&L from closed trades
     realized_pnl = 0
     for trade in filtered_trades:
-        # Only count realized P&L from closed/assigned/expired trades
-        if trade.status in ['Closed', 'Assigned', 'Expired']:
+        # Only count realized P&L from closed/assigned/called away/expired trades
+        # CRITICAL: Must include 'Called Away' to match calculate_wheel_pnl logic
+        if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
             trade_realized = trade.calculate_realized_pnl()
             realized_pnl += trade_realized
     
@@ -363,7 +364,7 @@ def get_monthly_returns():
         pnl_date = None
         if trade.close_date:
             pnl_date = trade.close_date
-        elif trade.status in ['Closed', 'Assigned'] and trade.trade_date:
+        elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
             pnl_date = trade.trade_date
         
         if not pnl_date:
@@ -413,7 +414,7 @@ def get_monthly_returns():
         pnl_date = None
         if trade.close_date:
             pnl_date = trade.close_date
-        elif trade.status in ['Closed', 'Assigned'] and trade.trade_date:
+        elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
             pnl_date = trade.trade_date
         
         if pnl_date and year_start <= pnl_date <= today:
