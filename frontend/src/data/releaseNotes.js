@@ -128,6 +128,24 @@ export const releaseNotes = {
       "Fixed issue where trades with past expiration dates were automatically marked as 'Closed' when entered, preventing historical data entry",
       "Resolved problem where users couldn't enter historical covered calls or other trades that expired in the past but were closed before expiration"
     ]
+  },
+  "1.5.2": {
+    date: "2025-01-05",
+    features: [
+      "Year-to-Date (YTD) Period Filter: Added YTD option to dashboard period filters for tracking performance from January 1st of the current year"
+    ],
+    improvements: [
+      "Accurate Return % Calculation: Return percentages are now calculated using capital at the start of the period, providing more accurate performance metrics",
+      "Improved Period Filtering: Period-based filters now correctly include trades based on when P&L was realized (close_date) rather than when trades were opened",
+      "Complete Unrealized P&L: All open positions are now included in unrealized P&L calculations for period-based filters, regardless of when they were opened",
+      "Fixed Missing Status Types: 'Called Away' and 'Expired' statuses are now properly included in all P&L and return calculations"
+    ],
+    bugfixes: [
+      "Fixed YTD filter showing zero values when trades were closed in the current year but opened in previous year",
+      "Fixed return % calculation excluding 'Called Away' trades from total capital, causing inaccurate return percentages",
+      "Fixed YTD and monthly returns missing trades with 'Called Away' or 'Expired' status",
+      "Fixed unrealized P&L only showing positions opened within the period, now correctly shows all open positions"
+    ]
   }
 };
 

@@ -422,7 +422,15 @@ function HowToUse() {
               <li><strong>Return %:</strong> Percentage return on your capital</li>
               <li><strong>Monthly Returns:</strong> Returns broken down by month</li>
             </ul>
-            <p>Use the <strong>Time Period</strong> filter to view P&L for specific date ranges (Last 7 Days, Last 30 Days, Last 90 Days, YTD, All Time).</p>
+            <p>Use the <strong>Time Period</strong> filter to view P&L for specific date ranges:</p>
+            <ul>
+              <li><strong>This Week:</strong> Trades closed in the last 7 days</li>
+              <li><strong>This Month:</strong> Trades closed in the last 30 days</li>
+              <li><strong>Year to Date (YTD):</strong> Trades closed from January 1st of the current year</li>
+              <li><strong>This Year:</strong> Trades closed in the last 365 days</li>
+              <li><strong>All Time:</strong> All trades regardless of date</li>
+            </ul>
+            <p><strong>Note:</strong> Return % is calculated using capital at the start of the selected period, providing accurate performance metrics. Unrealized P&L includes all open positions regardless of when they were opened.</p>
           </div>
 
           <div className="step-section">

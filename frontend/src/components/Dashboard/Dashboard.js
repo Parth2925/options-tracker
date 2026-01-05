@@ -93,6 +93,7 @@ function Dashboard() {
           pnl: {
             week: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 },
             month: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 },
+            ytd: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 },
             year: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 },
             all: { realized_pnl: 0, unrealized_pnl: 0, total_pnl: 0, rate_of_return: 0 }
           }
@@ -356,6 +357,7 @@ function Dashboard() {
               <select value={period} onChange={(e) => setPeriod(e.target.value)}>
                 <option value="week">This Week</option>
                 <option value="month">This Month</option>
+                <option value="ytd">Year to Date</option>
                 <option value="year">This Year</option>
                 <option value="all">All Time</option>
               </select>

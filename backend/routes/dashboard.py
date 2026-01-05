@@ -37,13 +37,18 @@ def calculate_wheel_pnl(trades):
     
     return realized_pnl, unrealized_pnl
 
-def get_total_capital(account_id, user_id):
+def get_total_capital_at_date(account_id, user_id, target_date):
     """
-    Calculate total working capital for an account.
-    Includes: initial balance + deposits - withdrawals + realized P&L from all closed trades
+    Calculate total working capital for an account as of a specific date.
+    Includes: initial balance + deposits - withdrawals + realized P&L from closed trades up to target_date
     
-    Realized P&L is considered as working capital since profits remain in the account
-    unless explicitly withdrawn via the withdrawal feature.
+    Args:
+        account_id: Account ID
+        user_id: User ID
+        target_date: Date object - calculate capital as of this date
+    
+    Returns:
+        Total capital as of target_date
     """
     account = Account.query.filter_by(id=account_id, user_id=user_id).first()
     if not account:
@@ -52,40 +57,58 @@ def get_total_capital(account_id, user_id):
     # Start with initial balance
     total = float(account.initial_balance) if account.initial_balance else 0
     
-    # Add deposits
-    deposits = Deposit.query.filter_by(account_id=account_id).all()
+    # Add deposits up to target_date
+    deposits = Deposit.query.filter_by(account_id=account_id).filter(Deposit.deposit_date <= target_date).all()
     for deposit in deposits:
         total += float(deposit.amount) if deposit.amount else 0
     
-    # Subtract withdrawals
-    withdrawals = Withdrawal.query.filter_by(account_id=account_id).all()
+    # Subtract withdrawals up to target_date
+    withdrawals = Withdrawal.query.filter_by(account_id=account_id).filter(Withdrawal.withdrawal_date <= target_date).all()
     for withdrawal in withdrawals:
         total -= float(withdrawal.amount) if withdrawal.amount else 0
     
-    # Add realized P&L from all closed trades (profits that are now working capital)
+    # Add realized P&L from closed trades up to target_date
     # Get all trades for this account
     trades = Trade.query.filter_by(account_id=account_id).all()
     
     # Filter out closing trades (two-entry approach) - only include opening trades for P&L calculation
-    # Closing trades' P&L is already included in their parent trade's P&L calculation
     filtered_trades = [
         trade for trade in trades 
         if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
     ]
     
-    # Calculate realized P&L from closed trades
+    # Calculate realized P&L from closed trades up to target_date
     realized_pnl = 0
     for trade in filtered_trades:
         # Only count realized P&L from closed/assigned/called away/expired trades
-        # CRITICAL: Must include 'Called Away' to match calculate_wheel_pnl logic
         if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
-            trade_realized = trade.calculate_realized_pnl()
-            realized_pnl += trade_realized
+            # Determine the date when P&L was realized
+            pnl_date = None
+            if trade.close_date:
+                pnl_date = trade.close_date
+            elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
+                pnl_date = trade.trade_date
+            
+            # Only include P&L if it was realized on or before target_date
+            if pnl_date and pnl_date <= target_date:
+                trade_realized = trade.calculate_realized_pnl()
+                realized_pnl += trade_realized
     
     # Add realized P&L to total capital (these profits are now working in the account)
     total += realized_pnl
     
     return total
+
+def get_total_capital(account_id, user_id):
+    """
+    Calculate total working capital for an account (current).
+    Includes: initial balance + deposits - withdrawals + realized P&L from all closed trades
+    
+    Realized P&L is considered as working capital since profits remain in the account
+    unless explicitly withdrawn via the withdrawal feature.
+    """
+    # Use current date for all-time calculation
+    return get_total_capital_at_date(account_id, user_id, date.today())
 
 @dashboard_bp.route('/positions', methods=['GET'])
 @jwt_required()
@@ -146,16 +169,25 @@ def get_pnl():
             'rate_of_return': 0
         }), 200
     
-    # Filter by date range
+    # Filter by date range and determine start date for capital calculation
     now = datetime.now().date()
     date_filter = None
+    capital_start_date = None  # Date to calculate capital at start of period
     
     if period == 'week':
         date_filter = now - timedelta(days=7)
+        capital_start_date = date_filter
     elif period == 'month':
         date_filter = now - timedelta(days=30)
+        capital_start_date = date_filter
     elif period == 'year':
         date_filter = now - timedelta(days=365)
+        capital_start_date = date_filter
+    elif period == 'ytd':
+        # Year-to-date: from January 1st of current year
+        capital_start_date = date(now.year, 1, 1)
+        date_filter = capital_start_date
+    # For 'all', date_filter and capital_start_date remain None
     
     query = Trade.query.filter(Trade.account_id.in_(account_ids))
     
@@ -165,9 +197,7 @@ def get_pnl():
     else:
         accounts_to_calc = account_ids
     
-    if date_filter:
-        query = query.filter(Trade.trade_date >= date_filter)
-    
+    # Don't filter by trade_date here - we'll filter by P&L realization date instead
     trades = query.all()
     
     # Filter out closing trades (two-entry approach) - only include opening trades for P&L calculation
@@ -176,6 +206,31 @@ def get_pnl():
         trade for trade in trades 
         if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
     ]
+    
+    # For period-based calculations, filter by when P&L was realized (not when trade was opened)
+    # This matches the logic used in monthly returns
+    if date_filter:
+        period_filtered_trades = []
+        for trade in filtered_trades:
+            # Determine the date when P&L was realized
+            pnl_date = None
+            if trade.close_date:
+                pnl_date = trade.close_date
+            elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
+                pnl_date = trade.trade_date
+            
+            # For realized P&L: only include if realized within the period
+            # For unrealized P&L: include ALL open positions (regardless of when opened)
+            # because they represent current portfolio value
+            if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+                # Realized P&L - filter by realization date
+                if pnl_date and pnl_date >= date_filter:
+                    period_filtered_trades.append(trade)
+            else:
+                # Unrealized P&L - include ALL open positions (they're part of current portfolio)
+                period_filtered_trades.append(trade)
+        
+        filtered_trades = period_filtered_trades
     
     # Calculate PNL using improved wheel strategy logic
     realized_pnl = 0
@@ -189,9 +244,17 @@ def get_pnl():
         unrealized_pnl += acc_unrealized
     
     # Calculate total capital
+    # For period-based calculations, use capital at start of period
+    # For 'all', use current total capital
     total_capital = 0
-    for acc_id in accounts_to_calc:
-        total_capital += get_total_capital(acc_id, user_id)
+    if capital_start_date:
+        # Use historical capital at start of period
+        for acc_id in accounts_to_calc:
+            total_capital += get_total_capital_at_date(acc_id, user_id, capital_start_date)
+    else:
+        # Use current total capital for 'all' period
+        for acc_id in accounts_to_calc:
+            total_capital += get_total_capital(acc_id, user_id)
     
     total_pnl = realized_pnl + unrealized_pnl
     rate_of_return = (total_pnl / total_capital * 100) if total_capital > 0 else 0
@@ -240,6 +303,7 @@ def get_summary():
     week_pnl = get_pnl_data(user_id, account_id, 'week', account_ids)
     month_pnl = get_pnl_data(user_id, account_id, 'month', account_ids)
     year_pnl = get_pnl_data(user_id, account_id, 'year', account_ids)
+    ytd_pnl = get_pnl_data(user_id, account_id, 'ytd', account_ids)
     all_pnl = get_pnl_data(user_id, account_id, 'all', account_ids)
     
     return jsonify({
@@ -251,6 +315,7 @@ def get_summary():
             'week': week_pnl,
             'month': month_pnl,
             'year': year_pnl,
+            'ytd': ytd_pnl,
             'all': all_pnl
         }
     }), 200
@@ -259,22 +324,29 @@ def get_pnl_data(user_id, account_id, period, account_ids):
     """Helper function to get PNL data for a period"""
     now = datetime.now().date()
     date_filter = None
+    capital_start_date = None  # Date to calculate capital at start of period
     
     if period == 'week':
         date_filter = now - timedelta(days=7)
+        capital_start_date = date_filter
     elif period == 'month':
         date_filter = now - timedelta(days=30)
+        capital_start_date = date_filter
     elif period == 'year':
         date_filter = now - timedelta(days=365)
+        capital_start_date = date_filter
+    elif period == 'ytd':
+        # Year-to-date: from January 1st of current year
+        capital_start_date = date(now.year, 1, 1)
+        date_filter = capital_start_date
+    # For 'all', date_filter and capital_start_date remain None
     
     query = Trade.query.filter(Trade.account_id.in_(account_ids))
     
     if account_id and account_id in account_ids:
         query = query.filter_by(account_id=account_id)
     
-    if date_filter:
-        query = query.filter(Trade.trade_date >= date_filter)
-    
+    # Don't filter by trade_date here - we'll filter by P&L realization date instead
     trades = query.all()
     
     # Filter out closing trades (two-entry approach) - only include opening trades for P&L calculation
@@ -284,11 +356,45 @@ def get_pnl_data(user_id, account_id, period, account_ids):
         if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
     ]
     
+    # For period-based calculations, filter by when P&L was realized (not when trade was opened)
+    # This matches the logic used in monthly returns
+    if date_filter:
+        period_filtered_trades = []
+        for trade in filtered_trades:
+            # Determine the date when P&L was realized
+            pnl_date = None
+            if trade.close_date:
+                pnl_date = trade.close_date
+            elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
+                pnl_date = trade.trade_date
+            
+            # For realized P&L: only include if realized within the period
+            # For unrealized P&L: include ALL open positions (regardless of when opened)
+            # because they represent current portfolio value
+            if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+                # Realized P&L - filter by realization date
+                if pnl_date and pnl_date >= date_filter:
+                    period_filtered_trades.append(trade)
+            else:
+                # Unrealized P&L - include ALL open positions (they're part of current portfolio)
+                period_filtered_trades.append(trade)
+        
+        filtered_trades = period_filtered_trades
+    
     # Use improved wheel PNL calculation
     realized, unrealized = calculate_wheel_pnl(filtered_trades)
     
     accounts_to_calc = [account_id] if account_id and account_id in account_ids else account_ids
-    total_capital = sum([get_total_capital(acc_id, user_id) for acc_id in accounts_to_calc])
+    
+    # Calculate total capital
+    # For period-based calculations, use capital at start of period
+    # For 'all', use current total capital
+    if capital_start_date:
+        # Use historical capital at start of period
+        total_capital = sum([get_total_capital_at_date(acc_id, user_id, capital_start_date) for acc_id in accounts_to_calc])
+    else:
+        # Use current total capital for 'all' period
+        total_capital = sum([get_total_capital(acc_id, user_id) for acc_id in accounts_to_calc])
     
     total = realized + unrealized
     ror = (total / total_capital * 100) if total_capital > 0 else 0
