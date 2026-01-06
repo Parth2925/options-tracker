@@ -242,9 +242,35 @@
   width: 17% !important;
 }
 
+/* Strategy Performance Table */
+.strategy-performance-table {
+  font-size: 14px;
+}
+
+.strategy-performance-table th {
+  white-space: nowrap;
+}
+
+.strategy-performance-table td {
+  white-space: nowrap;
+}
+
+/* Ticker Performance Table */
+.ticker-performance-table {
+  font-size: 14px;
+}
+
+.ticker-performance-table th {
+  white-space: nowrap;
+}
+
+.ticker-performance-table td {
+  white-space: nowrap;
+}
+
 @media (max-width: 768px) {
   .card .table-wrapper {
-    overflow-x: visible !important;
+    overflow-x: auto !important;
     margin: 0 !important;
     padding: 0 !important;
   }
@@ -259,9 +285,27 @@
     padding: 6px 4px !important;
     font-size: 11px !important;
   }
+  
+  /* Strategy and Ticker Performance tables - mobile optimization */
+  .strategy-performance-table,
+  .ticker-performance-table {
+    font-size: 11px !important;
+  }
+  
+  .strategy-performance-table th,
+  .strategy-performance-table td,
+  .ticker-performance-table th,
+  .ticker-performance-table td {
+    padding: 6px 4px !important;
+    font-size: 11px !important;
+  }
 }
 
 @media (max-width: 480px) {
+  .card .table-wrapper {
+    overflow-x: auto !important;
+  }
+  
   .card .table-wrapper table {
     font-size: 11px !important;
     min-width: auto !important;
@@ -269,6 +313,20 @@
   
   .card .table-wrapper table th,
   .card .table-wrapper table td {
+    padding: 5px 3px !important;
+    font-size: 10px !important;
+  }
+  
+  /* Strategy and Ticker Performance tables - small mobile optimization */
+  .strategy-performance-table,
+  .ticker-performance-table {
+    font-size: 10px !important;
+  }
+  
+  .strategy-performance-table th,
+  .strategy-performance-table td,
+  .ticker-performance-table th,
+  .ticker-performance-table td {
     padding: 5px 3px !important;
     font-size: 10px !important;
   }

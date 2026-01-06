@@ -920,3 +920,269 @@ def get_company_logos():
     
     return jsonify({'logos': logos}), 200
 
+@dashboard_bp.route('/ticker-performance', methods=['GET'])
+@jwt_required()
+def get_ticker_performance():
+    """
+    Get ticker-level performance metrics grouped by symbol.
+    Returns metrics including: trades count, win rate, total P&L, % of profit, open contracts, open premium.
+    """
+    user_id = get_jwt_identity()
+    account_id = request.args.get('account_id', type=int)
+    
+    # Get user's account IDs
+    accounts = Account.query.filter_by(user_id=user_id).all()
+    account_ids = [acc.id for acc in accounts]
+    
+    if not account_ids:
+        return jsonify([]), 200
+    
+    query = Trade.query.filter(Trade.account_id.in_(account_ids))
+    
+    if account_id and account_id in account_ids:
+        query = query.filter_by(account_id=account_id)
+    
+    trades = query.all()
+    
+    # Filter out closing trades (two-entry approach) - only include opening trades
+    filtered_trades = [
+        trade for trade in trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
+    # Group trades by symbol
+    ticker_data = defaultdict(lambda: {
+        'symbol': '',
+        'trades': [],
+        'total_trades': 0,
+        'winning_trades': 0,
+        'losing_trades': 0,
+        'win_rate': 0.0,
+        'total_pnl': 0.0,
+        'realized_pnl': 0.0,
+        'unrealized_pnl': 0.0,
+        'open_contracts': 0,
+        'open_premium': 0.0,
+        'total_contracts': 0
+    })
+    
+    # Calculate total portfolio P&L for % of profit calculation
+    total_portfolio_pnl = 0.0
+    
+    for trade in filtered_trades:
+        symbol = trade.symbol.upper()
+        ticker = ticker_data[symbol]
+        ticker['symbol'] = symbol
+        ticker['trades'].append(trade)
+        ticker['total_trades'] += 1
+        
+        # Calculate P&L for this trade
+        trade_realized_pnl = trade.calculate_realized_pnl()
+        
+        if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+            # Realized P&L
+            ticker['realized_pnl'] += trade_realized_pnl
+            total_portfolio_pnl += trade_realized_pnl
+            
+            # Win rate calculation: positive P&L = win
+            if trade_realized_pnl > 0:
+                ticker['winning_trades'] += 1
+            elif trade_realized_pnl < 0:
+                ticker['losing_trades'] += 1
+            # Note: Zero P&L trades are not counted as wins or losses
+        else:
+            # Unrealized P&L (open positions)
+            # Use remaining open quantity to account for partial closes
+            remaining_open = trade.get_remaining_open_quantity()
+            if remaining_open > 0:
+                # Calculate proportional premium for remaining open contracts
+                net_premium = float(trade.premium) if trade.premium else 0
+                if trade.contract_quantity and trade.contract_quantity > 0:
+                    # Premium per contract
+                    premium_per_contract = net_premium / trade.contract_quantity
+                    # Proportional premium for remaining open contracts
+                    proportional_premium = premium_per_contract * remaining_open
+                else:
+                    proportional_premium = net_premium
+                
+                ticker['unrealized_pnl'] += proportional_premium
+                ticker['open_premium'] += proportional_premium
+                ticker['open_contracts'] += remaining_open
+        
+        # Total contracts (all trades) - count original contract quantity
+        ticker['total_contracts'] += (trade.contract_quantity or 0)
+    
+    # Add unrealized P&L to total portfolio P&L (only once, not per ticker)
+    for symbol, ticker in ticker_data.items():
+        total_portfolio_pnl += ticker['unrealized_pnl']
+    
+    # Calculate total P&L and win rate for each ticker
+    result = []
+    for symbol, ticker in ticker_data.items():
+        ticker['total_pnl'] = ticker['realized_pnl'] + ticker['unrealized_pnl']
+        
+        # Calculate win rate
+        closed_trades = ticker['winning_trades'] + ticker['losing_trades']
+        if closed_trades > 0:
+            ticker['win_rate'] = (ticker['winning_trades'] / closed_trades) * 100
+        else:
+            ticker['win_rate'] = 0.0
+        
+        # Calculate % of profit (ticker P&L / total portfolio P&L)
+        # Note: If total_portfolio_pnl is negative, this shows % of losses
+        if total_portfolio_pnl != 0:
+            ticker['percent_of_profit'] = (ticker['total_pnl'] / total_portfolio_pnl) * 100
+        else:
+            ticker['percent_of_profit'] = 0.0
+        
+        result.append({
+            'symbol': ticker['symbol'],
+            'trades': ticker['total_trades'],
+            'win_rate': round(ticker['win_rate'], 2),
+            'total_pnl': round(ticker['total_pnl'], 2),
+            'realized_pnl': round(ticker['realized_pnl'], 2),
+            'unrealized_pnl': round(ticker['unrealized_pnl'], 2),
+            'percent_of_profit': round(ticker['percent_of_profit'], 2),
+            'open_contracts': ticker['open_contracts'],
+            'open_premium': round(ticker['open_premium'], 2),
+            'total_contracts': ticker['total_contracts']
+        })
+    
+    # Sort by Total P&L (descending)
+    result.sort(key=lambda x: x['total_pnl'], reverse=True)
+    
+    return jsonify(result), 200
+
+@dashboard_bp.route('/strategy-performance', methods=['GET'])
+@jwt_required()
+def get_strategy_performance():
+    """
+    Get strategy-level performance metrics grouped by trade_type.
+    Returns metrics including: trades count, win rate, total P&L, % of profit, open contracts, open premium.
+    """
+    user_id = get_jwt_identity()
+    account_id = request.args.get('account_id', type=int)
+    
+    # Get user's account IDs
+    accounts = Account.query.filter_by(user_id=user_id).all()
+    account_ids = [acc.id for acc in accounts]
+    
+    if not account_ids:
+        return jsonify([]), 200
+    
+    query = Trade.query.filter(Trade.account_id.in_(account_ids))
+    
+    if account_id and account_id in account_ids:
+        query = query.filter_by(account_id=account_id)
+    
+    trades = query.all()
+    
+    # Filter out closing trades (two-entry approach) - only include opening trades
+    filtered_trades = [
+        trade for trade in trades 
+        if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
+    ]
+    
+    # Group trades by trade_type (strategy)
+    strategy_data = defaultdict(lambda: {
+        'strategy': '',
+        'trades': [],
+        'total_trades': 0,
+        'winning_trades': 0,
+        'losing_trades': 0,
+        'win_rate': 0.0,
+        'total_pnl': 0.0,
+        'realized_pnl': 0.0,
+        'unrealized_pnl': 0.0,
+        'open_contracts': 0,
+        'open_premium': 0.0,
+        'total_contracts': 0
+    })
+    
+    # Calculate total portfolio P&L for % of profit calculation
+    total_portfolio_pnl = 0.0
+    
+    for trade in filtered_trades:
+        strategy = trade.trade_type
+        strategy_info = strategy_data[strategy]
+        strategy_info['strategy'] = strategy
+        strategy_info['trades'].append(trade)
+        strategy_info['total_trades'] += 1
+        
+        # Calculate P&L for this trade
+        trade_realized_pnl = trade.calculate_realized_pnl()
+        
+        if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+            # Realized P&L
+            strategy_info['realized_pnl'] += trade_realized_pnl
+            total_portfolio_pnl += trade_realized_pnl
+            
+            # Win rate calculation: positive P&L = win
+            if trade_realized_pnl > 0:
+                strategy_info['winning_trades'] += 1
+            elif trade_realized_pnl < 0:
+                strategy_info['losing_trades'] += 1
+            # Note: Zero P&L trades are not counted as wins or losses
+        else:
+            # Unrealized P&L (open positions)
+            # Use remaining open quantity to account for partial closes
+            remaining_open = trade.get_remaining_open_quantity()
+            if remaining_open > 0:
+                # Calculate proportional premium for remaining open contracts
+                net_premium = float(trade.premium) if trade.premium else 0
+                if trade.contract_quantity and trade.contract_quantity > 0:
+                    # Premium per contract
+                    premium_per_contract = net_premium / trade.contract_quantity
+                    # Proportional premium for remaining open contracts
+                    proportional_premium = premium_per_contract * remaining_open
+                else:
+                    proportional_premium = net_premium
+                
+                strategy_info['unrealized_pnl'] += proportional_premium
+                strategy_info['open_premium'] += proportional_premium
+                strategy_info['open_contracts'] += remaining_open
+        
+        # Total contracts (all trades) - count original contract quantity
+        strategy_info['total_contracts'] += (trade.contract_quantity or 0)
+    
+    # Add unrealized P&L to total portfolio P&L (sum all strategies' unrealized P&L)
+    for strategy, strategy_info in strategy_data.items():
+        total_portfolio_pnl += strategy_info['unrealized_pnl']
+    
+    # Calculate total P&L and win rate for each strategy
+    result = []
+    for strategy, strategy_info in strategy_data.items():
+        strategy_info['total_pnl'] = strategy_info['realized_pnl'] + strategy_info['unrealized_pnl']
+        
+        # Calculate win rate
+        closed_trades = strategy_info['winning_trades'] + strategy_info['losing_trades']
+        if closed_trades > 0:
+            strategy_info['win_rate'] = (strategy_info['winning_trades'] / closed_trades) * 100
+        else:
+            strategy_info['win_rate'] = 0.0
+        
+        # Calculate % of profit (strategy P&L / total portfolio P&L)
+        # Note: If total_portfolio_pnl is negative, this shows % of losses
+        if total_portfolio_pnl != 0:
+            strategy_info['percent_of_profit'] = (strategy_info['total_pnl'] / total_portfolio_pnl) * 100
+        else:
+            strategy_info['percent_of_profit'] = 0.0
+        
+        result.append({
+            'strategy': strategy_info['strategy'],
+            'trades': strategy_info['total_trades'],
+            'win_rate': round(strategy_info['win_rate'], 2),
+            'total_pnl': round(strategy_info['total_pnl'], 2),
+            'realized_pnl': round(strategy_info['realized_pnl'], 2),
+            'unrealized_pnl': round(strategy_info['unrealized_pnl'], 2),
+            'percent_of_profit': round(strategy_info['percent_of_profit'], 2),
+            'open_contracts': strategy_info['open_contracts'],
+            'open_premium': round(strategy_info['open_premium'], 2),
+            'total_contracts': strategy_info['total_contracts']
+        })
+    
+    # Sort by Total P&L (descending)
+    result.sort(key=lambda x: x['total_pnl'], reverse=True)
+    
+    return jsonify(result), 200
+

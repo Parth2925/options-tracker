@@ -20,6 +20,8 @@ function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [monthlyReturns, setMonthlyReturns] = useState(null);
   const [openPositions, setOpenPositions] = useState(null);
+  const [strategyPerformance, setStrategyPerformance] = useState([]);
+  const [tickerPerformance, setTickerPerformance] = useState([]);
   const [marketIndices, setMarketIndices] = useState({});
   const [positionQuotes, setPositionQuotes] = useState({});
   const [companyLogos, setCompanyLogos] = useState({});
@@ -40,6 +42,8 @@ function Dashboard() {
       loadSummary();
       loadMonthlyReturns();
       loadOpenPositions();
+      loadStrategyPerformance();
+      loadTickerPerformance();
     }
     // If no accounts, summary is already set in loadAccounts
   }, [selectedAccount, period, accounts, monthsBack]);
@@ -152,6 +156,55 @@ function Dashboard() {
       }
     } catch (error) {
       console.error('Error loading open positions:', error);
+    }
+  };
+
+  const loadStrategyPerformance = async () => {
+    try {
+      const params = {};
+      if (selectedAccount && selectedAccount !== 'all') {
+        params.account_id = selectedAccount;
+      }
+      
+      const response = await api.get('/dashboard/strategy-performance', { params });
+      setStrategyPerformance(response.data || []);
+    } catch (error) {
+      console.error('Error loading strategy performance:', error);
+      setStrategyPerformance([]);
+    }
+  };
+
+  const loadTickerPerformance = async () => {
+    try {
+      const params = {};
+      if (selectedAccount && selectedAccount !== 'all') {
+        params.account_id = selectedAccount;
+      }
+      
+      const response = await api.get('/dashboard/ticker-performance', { params });
+      setTickerPerformance(response.data || []);
+      
+      // Load logos for ticker performance symbols
+      if (response.data && response.data.length > 0) {
+        const symbols = [...new Set(response.data.map(t => t.symbol))].filter(Boolean);
+        if (symbols.length > 0) {
+          const loadLogos = async () => {
+            try {
+              const logoParams = { symbols: symbols.join(',') };
+              const logoResponse = await api.get('/dashboard/company-logos', { params: logoParams });
+              if (logoResponse.data && logoResponse.data.logos) {
+                setCompanyLogos(prev => ({ ...prev, ...logoResponse.data.logos }));
+              }
+            } catch (error) {
+              console.error('Error loading ticker performance logos:', error);
+            }
+          };
+          loadLogos();
+        }
+      }
+    } catch (error) {
+      console.error('Error loading ticker performance:', error);
+      setTickerPerformance([]);
     }
   };
 
@@ -727,6 +780,172 @@ function Dashboard() {
             <h2>Monthly Returns</h2>
             <p style={{ color: 'var(--text-secondary)', marginTop: '20px' }}>
               No monthly returns data available for the selected period. Returns are calculated based on when trades were closed.
+            </p>
+          </div>
+        )}
+
+        {/* Strategy Performance */}
+        {strategyPerformance && strategyPerformance.length > 0 && (
+          <div className="card">
+            <h2>Strategy Performance</h2>
+            <div className="table-wrapper" style={{ marginTop: '20px', overflowX: 'auto' }}>
+              <table className="strategy-performance-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ 
+                    backgroundColor: isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa', 
+                    borderBottom: `2px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}` 
+                  }}>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Strategy</th>
+                    <th style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Trades</th>
+                    <th style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Win Rate</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Total P&L</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>% of Profit</th>
+                    <th style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Open</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Open Premium</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {strategyPerformance.map((strategy, index) => (
+                    <tr 
+                      key={strategy.strategy}
+                      style={{ 
+                        borderBottom: `1px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}`,
+                        backgroundColor: index % 2 === 0 
+                          ? (isDarkMode ? 'var(--bg-secondary)' : '#fff')
+                          : (isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa')
+                      }}
+                    >
+                      <td style={{ padding: '12px', fontWeight: '500', color: 'var(--text-primary)' }}>
+                        {strategy.strategy}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                        {strategy.trades}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                        {strategy.win_rate.toFixed(1)}%
+                      </td>
+                      <td style={{ 
+                        padding: '12px', 
+                        textAlign: 'right',
+                        color: strategy.total_pnl >= 0 ? '#28a745' : '#dc3545',
+                        fontWeight: 'bold'
+                      }}>
+                        ${strategy.total_pnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                        {strategy.percent_of_profit.toFixed(1)}%
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                        {strategy.open_contracts}
+                      </td>
+                      <td style={{ 
+                        padding: '12px', 
+                        textAlign: 'right',
+                        color: strategy.open_premium >= 0 ? '#28a745' : '#dc3545'
+                      }}>
+                        ${strategy.open_premium.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {accounts.length > 0 && strategyPerformance && strategyPerformance.length === 0 && (
+          <div className="card">
+            <h2>Strategy Performance</h2>
+            <p style={{ color: 'var(--text-secondary)', marginTop: '20px' }}>
+              No strategy performance data available. Start trading to see performance metrics by strategy.
+            </p>
+          </div>
+        )}
+
+        {/* Ticker Performance */}
+        {tickerPerformance && tickerPerformance.length > 0 && (
+          <div className="card">
+            <h2>Ticker Performance</h2>
+            <div className="table-wrapper" style={{ marginTop: '20px', overflowX: 'auto' }}>
+              <table className="ticker-performance-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ 
+                    backgroundColor: isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa', 
+                    borderBottom: `2px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}` 
+                  }}>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold', color: 'var(--text-primary)' }}>Ticker</th>
+                    <th style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Trades</th>
+                    <th style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Win Rate</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Total P&L</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>% of Profit</th>
+                    <th style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-primary)' }}>Open</th>
+                    <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: 'var(--text-primary)' }}>Open Premium</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tickerPerformance.map((ticker, index) => (
+                    <tr 
+                      key={ticker.symbol}
+                      style={{ 
+                        borderBottom: `1px solid ${isDarkMode ? 'var(--border-color)' : '#dee2e6'}`,
+                        backgroundColor: index % 2 === 0 
+                          ? (isDarkMode ? 'var(--bg-secondary)' : '#fff')
+                          : (isDarkMode ? 'var(--bg-tertiary)' : '#f8f9fa')
+                      }}
+                    >
+                      <td style={{ padding: '12px', fontWeight: '500', color: 'var(--text-primary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {companyLogos[ticker.symbol] && (
+                            <img 
+                              src={companyLogos[ticker.symbol]} 
+                              alt={ticker.symbol}
+                              style={{ width: '24px', height: '24px', borderRadius: '4px' }}
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          )}
+                          <span>{ticker.symbol}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                        {ticker.trades}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                        {ticker.win_rate.toFixed(1)}%
+                      </td>
+                      <td style={{ 
+                        padding: '12px', 
+                        textAlign: 'right',
+                        color: ticker.total_pnl >= 0 ? '#28a745' : '#dc3545',
+                        fontWeight: 'bold'
+                      }}>
+                        ${ticker.total_pnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-primary)' }}>
+                        {ticker.percent_of_profit.toFixed(1)}%
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center', color: 'var(--text-primary)' }}>
+                        {ticker.open_contracts}
+                      </td>
+                      <td style={{ 
+                        padding: '12px', 
+                        textAlign: 'right',
+                        color: ticker.open_premium >= 0 ? '#28a745' : '#dc3545'
+                      }}>
+                        ${ticker.open_premium.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {accounts.length > 0 && tickerPerformance && tickerPerformance.length === 0 && (
+          <div className="card">
+            <h2>Ticker Performance</h2>
+            <p style={{ color: 'var(--text-secondary)', marginTop: '20px' }}>
+              No ticker performance data available. Start trading to see performance metrics by ticker.
             </p>
           </div>
         )}
