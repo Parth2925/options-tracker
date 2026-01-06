@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
+import ErrorBoundary from './components/ErrorBoundary/ErrorBoundary';
 import './components/Toast/Toast.css';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
@@ -120,11 +121,12 @@ function App() {
     // Only run keep-alive in production (when using Render)
     if (process.env.NODE_ENV === 'production') {
       const keepAliveInterval = setInterval(() => {
-        // Ping the backend every 10 minutes to keep it awake (Render spins down after 15 min)
+        // Ping the backend every 5 minutes to keep it awake (Render spins down after 15 min)
+        // More frequent pings ensure the instance stays awake even if one ping fails
         api.get('/ping').catch(() => {
           // Silently fail - this is just a keep-alive, don't show errors
         });
-      }, 10 * 60 * 1000); // 10 minutes
+      }, 5 * 60 * 1000); // 5 minutes (more frequent to ensure reliability)
 
       // Also ping immediately when app loads
       api.get('/ping').catch(() => {});
@@ -134,17 +136,19 @@ function App() {
   }, []);
 
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <AuthProvider>
-          <Router>
-            <div className="App">
-              <AppRoutes />
-            </div>
-          </Router>
-        </AuthProvider>
-      </ToastProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <Router>
+              <div className="App">
+                <AppRoutes />
+              </div>
+            </Router>
+          </AuthProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

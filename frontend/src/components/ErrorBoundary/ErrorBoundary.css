@@ -1,0 +1,90 @@
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+  background: var(--bg-primary, #f5f5f5);
+}
+
+.error-boundary-content {
+  max-width: 600px;
+  padding: 40px;
+  background: var(--bg-secondary, #fff);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.error-boundary-content h1 {
+  color: var(--text-primary, #333);
+  margin-bottom: 16px;
+  font-size: 24px;
+}
+
+.error-boundary-content p {
+  color: var(--text-secondary, #666);
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.error-details {
+  margin: 20px 0;
+  padding: 16px;
+  background: var(--bg-tertiary, #f8f9fa);
+  border-radius: 4px;
+  text-align: left;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.error-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+  margin-bottom: 12px;
+}
+
+.error-details pre {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 8px 0;
+}
+
+.error-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.error-actions .btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.error-actions .btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.error-actions .btn-primary:hover {
+  background: #0056b3;
+}
+
+.error-actions .btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.error-actions .btn-secondary:hover {
+  background: #545b62;
+}
+

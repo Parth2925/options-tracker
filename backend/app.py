@@ -12,6 +12,9 @@ from version import get_version
 import os
 from datetime import timedelta, datetime
 from dotenv import load_dotenv
+import threading
+import requests
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -337,6 +340,43 @@ def health_check():
 def ping():
     """Keep-alive endpoint to prevent Render free tier spin-down"""
     return {'status': 'pong', 'timestamp': datetime.utcnow().isoformat()}, 200
+
+def keep_alive_ping():
+    """
+    Background thread to ping the health endpoint every 5 minutes
+    This keeps the Render free tier instance awake even when no users are active
+    """
+    # Wait a bit for the app to fully start
+    time.sleep(30)
+    
+    # Get the base URL from environment or use localhost for development
+    base_url = os.getenv('RENDER_EXTERNAL_URL') or os.getenv('BASE_URL') or 'http://localhost:5001'
+    
+    # Ensure base_url doesn't end with /
+    base_url = base_url.rstrip('/')
+    
+    ping_url = f'{base_url}/api/ping'
+    
+    while True:
+        try:
+            # Ping the health endpoint
+            response = requests.get(ping_url, timeout=10)
+            if response.status_code == 200:
+                app.logger.debug(f'Keep-alive ping successful: {ping_url}')
+            else:
+                app.logger.warning(f'Keep-alive ping returned status {response.status_code}')
+        except Exception as e:
+            # Log but don't crash - this is just a keep-alive
+            app.logger.warning(f'Keep-alive ping failed: {str(e)}')
+        
+        # Wait 5 minutes before next ping (Render spins down after 15 min of inactivity)
+        time.sleep(5 * 60)
+
+# Start keep-alive thread when app starts (only in production/Render)
+if os.getenv('FLASK_ENV') == 'production' or os.getenv('RENDER') == 'true' or os.getenv('RENDER_EXTERNAL_URL'):
+    keep_alive_thread = threading.Thread(target=keep_alive_ping, daemon=True)
+    keep_alive_thread.start()
+    app.logger.info('Keep-alive thread started to prevent Render spin-down')
 
 @app.route('/api/version', methods=['GET'])
 def get_app_version():

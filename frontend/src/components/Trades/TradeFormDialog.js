@@ -9,6 +9,7 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
   const [fieldErrors, setFieldErrors] = useState({});
   const [dragStartPos, setDragStartPos] = useState(null);
   const [dragStartTarget, setDragStartTarget] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Prevent duplicate submissions
   
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -435,6 +436,11 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Prevent duplicate submissions
+    if (isSubmitting || loading) {
+      return;
+    }
+    
     if (!validateForm()) {
       const firstError = Object.values(fieldErrors)[0];
       showToast(firstError || 'Please fix the errors in the form', 'error');
@@ -447,6 +453,7 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
       return;
     }
 
+    setIsSubmitting(true);
     setLoading(true);
 
     try {
@@ -493,9 +500,46 @@ function TradeFormDialog({ trade, accounts, stockPositions, onSuccess, onCancel 
       onSuccess();
     } catch (error) {
       console.error('Error saving trade:', error);
-      showToast(error.response?.data?.error || `Failed to ${trade ? 'update' : 'create'} trade`, 'error');
+      
+      // Handle different error types with user-friendly messages
+      let errorMessage = `Failed to ${trade ? 'update' : 'create'} trade`;
+      
+      if (error.response) {
+        // Server responded with error
+        const status = error.response.status;
+        if (status === 400) {
+          errorMessage = error.response.data?.error || 'Invalid data. Please check your inputs.';
+        } else if (status === 401) {
+          errorMessage = 'Session expired. Please log in again.';
+        } else if (status === 403) {
+          errorMessage = 'You do not have permission to perform this action.';
+        } else if (status === 404) {
+          errorMessage = 'Resource not found. Please refresh and try again.';
+        } else if (status === 429) {
+          errorMessage = 'Too many requests. Please wait a moment and try again.';
+        } else if (status >= 500) {
+          errorMessage = 'Server error. Please try again in a moment.';
+        } else {
+          errorMessage = error.response.data?.error || errorMessage;
+        }
+      } else if (error.request) {
+        // Request was made but no response received (timeout, network error)
+        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+          errorMessage = 'Request timed out. The server may be slow to respond. Please try again.';
+        } else if (error.message?.includes('Network Error')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        } else {
+          errorMessage = 'Unable to reach server. Please check your connection and try again.';
+        }
+      } else {
+        // Something else happened
+        errorMessage = error.message || errorMessage;
+      }
+      
+      showToast(errorMessage, 'error');
     } finally {
       setLoading(false);
+      setIsSubmitting(false);
     }
   };
 

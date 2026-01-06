@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, Trade, Account, StockPosition
 from datetime import datetime
@@ -427,9 +427,28 @@ def create_trade():
         db.session.commit()
         
         return jsonify(trade.to_dict(include_realized_pnl=True)), 201
-    except Exception as e:
+    except ValueError as e:
+        # Validation errors - return user-friendly message
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        # Make error messages more user-friendly
+        if 'invalid literal' in error_msg.lower() or 'could not convert' in error_msg.lower():
+            error_msg = 'Invalid number format. Please check your numeric inputs.'
+        return jsonify({'error': error_msg}), 400
+    except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        current_app.logger.error(f'Error creating trade: {str(e)}\n{traceback.format_exc()}')
+        db.session.rollback()
+        
+        # Return user-friendly error message without exposing internal details
+        error_type = type(e).__name__
+        if 'IntegrityError' in error_type or 'duplicate' in str(e).lower():
+            return jsonify({'error': 'This trade already exists or conflicts with existing data.'}), 400
+        elif 'OperationalError' in error_type or 'connection' in str(e).lower():
+            return jsonify({'error': 'Database connection error. Please try again in a moment.'}), 503
+        else:
+            return jsonify({'error': 'An error occurred while creating the trade. Please try again.'}), 500
 
 @trades_bp.route('/<int:trade_id>', methods=['GET'])
 @jwt_required()
@@ -699,9 +718,27 @@ def update_trade(trade_id):
         db.session.commit()
         # Return updated trade with recalculated P&L, days_held, and return metrics
         return jsonify(trade.to_dict(include_realized_pnl=True)), 200
-    except Exception as e:
+    except ValueError as e:
+        # Validation errors - return user-friendly message
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        if 'invalid literal' in error_msg.lower() or 'could not convert' in error_msg.lower():
+            error_msg = 'Invalid number format. Please check your numeric inputs.'
+        return jsonify({'error': error_msg}), 400
+    except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        current_app.logger.error(f'Error updating trade: {str(e)}\n{traceback.format_exc()}')
+        db.session.rollback()
+        
+        # Return user-friendly error message without exposing internal details
+        error_type = type(e).__name__
+        if 'IntegrityError' in error_type or 'duplicate' in str(e).lower():
+            return jsonify({'error': 'This update conflicts with existing data.'}), 400
+        elif 'OperationalError' in error_type or 'connection' in str(e).lower():
+            return jsonify({'error': 'Database connection error. Please try again in a moment.'}), 503
+        else:
+            return jsonify({'error': 'An error occurred while updating the trade. Please try again.'}), 500
 
 @trades_bp.route('/<int:trade_id>', methods=['DELETE'])
 @jwt_required()
@@ -722,8 +759,19 @@ def delete_trade(trade_id):
         db.session.commit()
         return jsonify({'message': 'Trade deleted successfully'}), 200
     except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        current_app.logger.error(f'Error deleting trade: {str(e)}\n{traceback.format_exc()}')
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        
+        # Return user-friendly error message without exposing internal details
+        error_type = type(e).__name__
+        if 'IntegrityError' in error_type:
+            return jsonify({'error': 'Cannot delete this trade because it is referenced by other records.'}), 400
+        elif 'OperationalError' in error_type or 'connection' in str(e).lower():
+            return jsonify({'error': 'Database connection error. Please try again in a moment.'}), 503
+        else:
+            return jsonify({'error': 'An error occurred while deleting the trade. Please try again.'}), 500
 
 @trades_bp.route('/<int:trade_id>/chain', methods=['GET'])
 @jwt_required()
