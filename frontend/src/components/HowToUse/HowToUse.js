@@ -48,8 +48,13 @@ function HowToUse() {
               <li><strong>Account Summary:</strong> Total capital, available capital, and allocated capital</li>
               <li><strong>P&L Metrics:</strong> Total P&L, return percentage, and monthly returns</li>
               <li><strong>Position Details:</strong> All your open positions with company logos</li>
+              <li><strong>Strategy Performance:</strong> Performance metrics grouped by trade strategy (CSP, Covered Call, LEAPS, etc.) showing trades count, win rate, total P&L, % of profit, open contracts, and open premium</li>
+              <li><strong>Ticker Performance:</strong> Performance metrics grouped by ticker symbol showing trades count, win rate, total P&L, % of profit, open contracts, and open premium with company logos</li>
             </ul>
             <p>Use the filters at the top to view data for specific accounts or time periods.</p>
+            <div className="tip-box">
+              <strong>💡 Tip:</strong> The Strategy Performance and Ticker Performance sections help you identify which strategies and tickers are performing best. Both sections are sorted by Total P&L (highest first) and account for partially closed trades accurately.
+            </div>
           </div>
         </div>
       )

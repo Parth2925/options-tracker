@@ -146,6 +146,24 @@ export const releaseNotes = {
       "Fixed YTD and monthly returns missing trades with 'Called Away' or 'Expired' status",
       "Fixed unrealized P&L only showing positions opened within the period, now correctly shows all open positions"
     ]
+  },
+  "1.5.3": {
+    date: "2025-01-05",
+    features: [
+      "Strategy Performance Section: New dashboard section showing performance metrics grouped by trade strategy (CSP, Covered Call, LEAPS, etc.)",
+      "Ticker Performance Section: New dashboard section showing performance metrics grouped by ticker symbol with company logos"
+    ],
+    improvements: [
+      "Enhanced Dashboard Analytics: Both Strategy and Ticker Performance sections display comprehensive metrics including trades count, win rate, total P&L, % of profit, open contracts, and open premium",
+      "Accurate Partial Close Handling: Open contracts count now correctly accounts for partially closed trades using remaining open quantity",
+      "Proportional Unrealized P&L: Unrealized P&L calculations now use proportional premium for remaining open contracts when trades are partially closed",
+      "Improved Mobile Responsiveness: Strategy and Ticker Performance tables are optimized for mobile devices with responsive font sizes and padding",
+      "Dark Mode Support: Both performance sections fully support dark mode with proper alternating row colors and contrast"
+    ],
+    bugfixes: [
+      "Fixed open contracts count incorrectly showing full contract quantity instead of remaining open quantity for partially closed trades",
+      "Fixed unrealized P&L calculation using full premium instead of proportional premium for partially closed trades"
+    ]
   }
 };
 
