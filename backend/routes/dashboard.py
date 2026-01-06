@@ -1012,14 +1012,12 @@ def get_ticker_performance():
         # Total contracts (all trades) - count original contract quantity
         ticker['total_contracts'] += (trade.contract_quantity or 0)
     
-    # Add unrealized P&L to total portfolio P&L (only once, not per ticker)
-    for symbol, ticker in ticker_data.items():
-        total_portfolio_pnl += ticker['unrealized_pnl']
-    
     # Calculate total P&L and win rate for each ticker
+    # Note: total_pnl now represents only realized P&L (unrealized is shown separately as open_premium)
     result = []
     for symbol, ticker in ticker_data.items():
-        ticker['total_pnl'] = ticker['realized_pnl'] + ticker['unrealized_pnl']
+        # Total P&L = only realized P&L (unrealized is shown separately)
+        ticker['total_pnl'] = ticker['realized_pnl']
         
         # Calculate win rate
         closed_trades = ticker['winning_trades'] + ticker['losing_trades']
@@ -1028,7 +1026,7 @@ def get_ticker_performance():
         else:
             ticker['win_rate'] = 0.0
         
-        # Calculate % of profit (ticker P&L / total portfolio P&L)
+        # Calculate % of profit (ticker realized P&L / total portfolio realized P&L)
         # Note: If total_portfolio_pnl is negative, this shows % of losses
         if total_portfolio_pnl != 0:
             ticker['percent_of_profit'] = (ticker['total_pnl'] / total_portfolio_pnl) * 100
@@ -1145,14 +1143,12 @@ def get_strategy_performance():
         # Total contracts (all trades) - count original contract quantity
         strategy_info['total_contracts'] += (trade.contract_quantity or 0)
     
-    # Add unrealized P&L to total portfolio P&L (sum all strategies' unrealized P&L)
-    for strategy, strategy_info in strategy_data.items():
-        total_portfolio_pnl += strategy_info['unrealized_pnl']
-    
     # Calculate total P&L and win rate for each strategy
+    # Note: total_pnl now represents only realized P&L (unrealized is shown separately as open_premium)
     result = []
     for strategy, strategy_info in strategy_data.items():
-        strategy_info['total_pnl'] = strategy_info['realized_pnl'] + strategy_info['unrealized_pnl']
+        # Total P&L = only realized P&L (unrealized is shown separately)
+        strategy_info['total_pnl'] = strategy_info['realized_pnl']
         
         # Calculate win rate
         closed_trades = strategy_info['winning_trades'] + strategy_info['losing_trades']
@@ -1161,7 +1157,7 @@ def get_strategy_performance():
         else:
             strategy_info['win_rate'] = 0.0
         
-        # Calculate % of profit (strategy P&L / total portfolio P&L)
+        # Calculate % of profit (strategy realized P&L / total portfolio realized P&L)
         # Note: If total_portfolio_pnl is negative, this shows % of losses
         if total_portfolio_pnl != 0:
             strategy_info['percent_of_profit'] = (strategy_info['total_pnl'] / total_portfolio_pnl) * 100
