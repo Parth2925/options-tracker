@@ -438,13 +438,38 @@ def create_trade():
     except Exception as e:
         # Log the full error for debugging
         import traceback
-        current_app.logger.error(f'Error creating trade: {str(e)}\n{traceback.format_exc()}')
+        error_str = str(e).lower()
+        error_traceback = traceback.format_exc()
+        current_app.logger.error(f'Error creating trade - Type: {type(e).__name__}, Message: {str(e)}\nFull traceback:\n{error_traceback}')
         db.session.rollback()
         
         # Return user-friendly error message without exposing internal details
         error_type = type(e).__name__
-        if 'IntegrityError' in error_type or 'duplicate' in str(e).lower():
-            return jsonify({'error': 'This trade already exists or conflicts with existing data.'}), 400
+        
+        # Check for specific database constraint violations
+        if 'IntegrityError' in error_type:
+            # Log the full IntegrityError details for debugging
+            current_app.logger.error(f'IntegrityError details: {str(e)}')
+            
+            # Check for specific constraint types
+            if 'unique constraint' in error_str or 'duplicate key' in error_str or 'UNIQUE constraint' in str(e):
+                # This should NOT happen for trades - users should be able to have multiple positions
+                # with same symbol/strike/expiry. This suggests a database constraint was added.
+                # Log full error for investigation
+                current_app.logger.error(f'UNIQUE CONSTRAINT VIOLATION detected - This prevents multiple trades with same details. Full error: {str(e)}')
+                return jsonify({
+                    'error': 'Unable to create trade: A database constraint prevents creating a trade with these exact details. This may be due to an existing trade with the same symbol, strike price, and expiration date. Note: You should be able to add multiple positions for the same symbol, strike, and expiration at different prices or on different days. If this is unexpected, the error has been logged for investigation.'
+                }), 400
+            elif 'foreign key constraint' in error_str or 'FOREIGN KEY constraint' in str(e):
+                return jsonify({'error': 'Invalid reference to another record. Please check that the account, parent trade, or stock position exists and is valid.'}), 400
+            elif 'not null constraint' in error_str or 'null value' in error_str or 'NOT NULL constraint' in str(e):
+                return jsonify({'error': 'A required field is missing. Please check all required fields are filled.'}), 400
+            else:
+                # Generic IntegrityError - log full details for investigation
+                current_app.logger.error(f'Generic IntegrityError: {str(e)}')
+                return jsonify({
+                    'error': 'This trade conflicts with existing data. Please check that the account and related records are valid. The error has been logged for investigation.'
+                }), 400
         elif 'OperationalError' in error_type or 'connection' in str(e).lower():
             return jsonify({'error': 'Database connection error. Please try again in a moment.'}), 503
         else:
