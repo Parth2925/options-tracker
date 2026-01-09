@@ -50,6 +50,7 @@ function Dashboard() {
 
   useEffect(() => {
     // Load logos when openPositions changes
+    // Use merge pattern to preserve logos from ticker performance
     if (openPositions && openPositions.positions && openPositions.positions.length > 0) {
       const symbols = [...new Set(openPositions.positions.map(p => p.symbol))].filter(Boolean);
       if (symbols.length > 0) {
@@ -58,7 +59,8 @@ function Dashboard() {
             const params = { symbols: symbols.join(',') };
             const response = await api.get('/dashboard/company-logos', { params });
             if (response.data && response.data.logos) {
-              setCompanyLogos(response.data.logos);
+              // Merge with existing logos instead of replacing
+              setCompanyLogos(prev => ({ ...prev, ...response.data.logos }));
             }
           } catch (error) {
             console.error('Error loading company logos:', error);
@@ -185,21 +187,33 @@ function Dashboard() {
       setTickerPerformance(response.data || []);
       
       // Load logos for ticker performance symbols
+      // Always load logos - merge pattern ensures no duplicates
       if (response.data && response.data.length > 0) {
         const symbols = [...new Set(response.data.map(t => t.symbol))].filter(Boolean);
         if (symbols.length > 0) {
-          const loadLogos = async () => {
-            try {
-              const logoParams = { symbols: symbols.join(',') };
-              const logoResponse = await api.get('/dashboard/company-logos', { params: logoParams });
-              if (logoResponse.data && logoResponse.data.logos) {
-                setCompanyLogos(prev => ({ ...prev, ...logoResponse.data.logos }));
-              }
-            } catch (error) {
-              console.error('Error loading ticker performance logos:', error);
+          try {
+            const logoParams = { symbols: symbols.join(',') };
+            const logoResponse = await api.get('/dashboard/company-logos', { params: logoParams });
+            if (logoResponse.data && logoResponse.data.logos) {
+              // Merge with existing logos (from openPositions or previous loads)
+              // This ensures logos from both sources are preserved
+              setCompanyLogos(prev => ({ ...prev, ...logoResponse.data.logos }));
             }
-          };
-          loadLogos();
+          } catch (error) {
+            console.error('Error loading ticker performance logos:', error);
+            // Retry once after a short delay to handle transient network issues
+            setTimeout(async () => {
+              try {
+                const logoParams = { symbols: symbols.join(',') };
+                const logoResponse = await api.get('/dashboard/company-logos', { params: logoParams });
+                if (logoResponse.data && logoResponse.data.logos) {
+                  setCompanyLogos(prev => ({ ...prev, ...logoResponse.data.logos }));
+                }
+              } catch (retryError) {
+                console.error('Error loading ticker performance logos (retry failed):', retryError);
+              }
+            }, 1000);
+          }
         }
       }
     } catch (error) {

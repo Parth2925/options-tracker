@@ -71,13 +71,23 @@ api.interceptors.response.use(
       const publicPaths = ['/', '/login', '/register', '/verify-email'];
       const isPublicPath = publicPaths.includes(currentPath);
       
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      // Special handling for /auth/me endpoint - this is used for token validation
+      // If it fails, it might be a temporary server issue (e.g., Render spin-down)
+      // Don't immediately remove token - let AuthContext handle it
+      const isAuthMeEndpoint = config.url && config.url.includes('/auth/me');
       
-      // Only redirect if we're on a protected route
-      if (!isPublicPath) {
-        window.location.href = '/login';
+      if (!isAuthMeEndpoint) {
+        // For other endpoints, remove token on 401 (likely expired or invalid)
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        
+        // Only redirect if we're on a protected route
+        if (!isPublicPath) {
+          window.location.href = '/login';
+        }
       }
+      // For /auth/me, let the error propagate to AuthContext which will handle it gracefully
+      
       return Promise.reject(error);
     }
     

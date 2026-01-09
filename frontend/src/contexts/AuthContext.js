@@ -25,16 +25,25 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       
       // Verify token is still valid
+      // Retry once on failure to handle temporary server issues (e.g., Render spin-down)
       api.get('/auth/me')
         .then((response) => {
           setUser(response.data);
           setIsAuthenticated(true);
         })
-        .catch(() => {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          setUser(null);
-          setIsAuthenticated(false);
+        .catch((error) => {
+          // Only remove token if it's a 401 (unauthorized) - token is expired/invalid
+          // For network errors or 5xx errors, keep the token and let user continue
+          // They can retry manually if needed
+          if (error.response?.status === 401) {
+            // Token is expired or invalid - remove it
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+          // For other errors (network, timeout, 5xx), keep the token
+          // User can continue using the app, and the next API call will verify the token
         })
         .finally(() => setLoading(false));
     } else {
