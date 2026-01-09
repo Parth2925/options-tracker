@@ -187,6 +187,10 @@ def get_pnl():
         # Year-to-date: from January 1st of current year
         capital_start_date = date(now.year, 1, 1)
         date_filter = capital_start_date
+    elif period == 'last_year':
+        # Last year: from January 1st of previous year to December 31st of previous year
+        capital_start_date = date(now.year - 1, 1, 1)
+        date_filter = capital_start_date
     # For 'all', date_filter and capital_start_date remain None
     
     query = Trade.query.filter(Trade.account_id.in_(account_ids))
@@ -219,16 +223,28 @@ def get_pnl():
             elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
                 pnl_date = trade.trade_date
             
-            # For realized P&L: only include if realized within the period
-            # For unrealized P&L: include ALL open positions (regardless of when opened)
-            # because they represent current portfolio value
-            if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
-                # Realized P&L - filter by realization date
-                if pnl_date and pnl_date >= date_filter:
-                    period_filtered_trades.append(trade)
+            # Special handling for 'last_year' period
+            if period == 'last_year':
+                last_year_start = date(now.year - 1, 1, 1)
+                last_year_end = date(now.year - 1, 12, 31)
+                # For realized P&L: only include if realized in last year
+                # For unrealized P&L: don't include (they're current positions)
+                if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+                    if pnl_date and last_year_start <= pnl_date <= last_year_end:
+                        period_filtered_trades.append(trade)
+                # Open positions are not included in "last year" period
             else:
-                # Unrealized P&L - include ALL open positions (they're part of current portfolio)
-                period_filtered_trades.append(trade)
+                # For other periods (week, month, year, ytd)
+                # For realized P&L: only include if realized within the period
+                # For unrealized P&L: include ALL open positions (regardless of when opened)
+                # because they represent current portfolio value
+                if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+                    # Realized P&L - filter by realization date
+                    if pnl_date and pnl_date >= date_filter:
+                        period_filtered_trades.append(trade)
+                else:
+                    # Unrealized P&L - include ALL open positions (they're part of current portfolio)
+                    period_filtered_trades.append(trade)
         
         filtered_trades = period_filtered_trades
     
@@ -929,6 +945,7 @@ def get_ticker_performance():
     """
     user_id = get_jwt_identity()
     account_id = request.args.get('account_id', type=int)
+    period = request.args.get('period', 'all')  # 'week', 'month', 'year', 'ytd', 'last_year', 'all'
     
     # Get user's account IDs
     accounts = Account.query.filter_by(user_id=user_id).all()
@@ -949,6 +966,67 @@ def get_ticker_performance():
         trade for trade in trades 
         if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
     ]
+    
+    # Apply period filtering similar to P&L endpoint
+    now = datetime.now().date()
+    date_filter = None
+    
+    if period == 'week':
+        date_filter = now - timedelta(days=7)
+    elif period == 'month':
+        date_filter = now - timedelta(days=30)
+    elif period == 'year':
+        date_filter = now - timedelta(days=365)
+    elif period == 'ytd':
+        # Year-to-date: from January 1st of current year
+        date_filter = date(now.year, 1, 1)
+    elif period == 'last_year':
+        # Last year: from January 1st of previous year to December 31st of previous year
+        last_year_start = date(now.year - 1, 1, 1)
+        last_year_end = date(now.year - 1, 12, 31)
+        # Filter trades realized in last year
+        period_filtered_trades = []
+        for trade in filtered_trades:
+            pnl_date = None
+            if trade.close_date:
+                pnl_date = trade.close_date
+            elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
+                pnl_date = trade.trade_date
+            
+            # For realized P&L: only include if realized in last year
+            # For unrealized P&L: don't include (they're current positions)
+            if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+                if pnl_date and last_year_start <= pnl_date <= last_year_end:
+                    period_filtered_trades.append(trade)
+            # Open positions are not included in "last year" period
+        filtered_trades = period_filtered_trades
+    elif period == 'all':
+        # No date filtering - include all trades
+        pass
+    
+    # Apply date filter for other periods (week, month, year, ytd)
+    if date_filter and period != 'last_year':
+        period_filtered_trades = []
+        for trade in filtered_trades:
+            # Determine the date when P&L was realized
+            pnl_date = None
+            if trade.close_date:
+                pnl_date = trade.close_date
+            elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
+                pnl_date = trade.trade_date
+            
+            # For realized P&L: only include if realized within the period
+            # For unrealized P&L: include ALL open positions (regardless of when opened)
+            # because they represent current portfolio value
+            if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+                # Realized P&L - filter by realization date
+                if pnl_date and pnl_date >= date_filter:
+                    period_filtered_trades.append(trade)
+            else:
+                # Unrealized P&L - include ALL open positions (they're part of current portfolio)
+                period_filtered_trades.append(trade)
+        
+        filtered_trades = period_filtered_trades
     
     # Group trades by symbol
     ticker_data = defaultdict(lambda: {
@@ -1060,6 +1138,7 @@ def get_strategy_performance():
     """
     user_id = get_jwt_identity()
     account_id = request.args.get('account_id', type=int)
+    period = request.args.get('period', 'all')  # 'week', 'month', 'year', 'ytd', 'last_year', 'all'
     
     # Get user's account IDs
     accounts = Account.query.filter_by(user_id=user_id).all()
@@ -1080,6 +1159,67 @@ def get_strategy_performance():
         trade for trade in trades 
         if not (trade.trade_action in ['Bought to Close', 'Sold to Close'] and trade.parent_trade_id)
     ]
+    
+    # Apply period filtering similar to P&L endpoint
+    now = datetime.now().date()
+    date_filter = None
+    
+    if period == 'week':
+        date_filter = now - timedelta(days=7)
+    elif period == 'month':
+        date_filter = now - timedelta(days=30)
+    elif period == 'year':
+        date_filter = now - timedelta(days=365)
+    elif period == 'ytd':
+        # Year-to-date: from January 1st of current year
+        date_filter = date(now.year, 1, 1)
+    elif period == 'last_year':
+        # Last year: from January 1st of previous year to December 31st of previous year
+        last_year_start = date(now.year - 1, 1, 1)
+        last_year_end = date(now.year - 1, 12, 31)
+        # Filter trades realized in last year
+        period_filtered_trades = []
+        for trade in filtered_trades:
+            pnl_date = None
+            if trade.close_date:
+                pnl_date = trade.close_date
+            elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
+                pnl_date = trade.trade_date
+            
+            # For realized P&L: only include if realized in last year
+            # For unrealized P&L: don't include (they're current positions)
+            if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+                if pnl_date and last_year_start <= pnl_date <= last_year_end:
+                    period_filtered_trades.append(trade)
+            # Open positions are not included in "last year" period
+        filtered_trades = period_filtered_trades
+    elif period == 'all':
+        # No date filtering - include all trades
+        pass
+    
+    # Apply date filter for other periods (week, month, year, ytd)
+    if date_filter and period != 'last_year':
+        period_filtered_trades = []
+        for trade in filtered_trades:
+            # Determine the date when P&L was realized
+            pnl_date = None
+            if trade.close_date:
+                pnl_date = trade.close_date
+            elif trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired'] and trade.trade_date:
+                pnl_date = trade.trade_date
+            
+            # For realized P&L: only include if realized within the period
+            # For unrealized P&L: include ALL open positions (regardless of when opened)
+            # because they represent current portfolio value
+            if trade.status in ['Closed', 'Assigned', 'Called Away', 'Expired']:
+                # Realized P&L - filter by realization date
+                if pnl_date and pnl_date >= date_filter:
+                    period_filtered_trades.append(trade)
+            else:
+                # Unrealized P&L - include ALL open positions (they're part of current portfolio)
+                period_filtered_trades.append(trade)
+        
+        filtered_trades = period_filtered_trades
     
     # Group trades by trade_type (strategy)
     strategy_data = defaultdict(lambda: {

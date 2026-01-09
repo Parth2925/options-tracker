@@ -163,7 +163,7 @@ function Dashboard() {
 
   const loadStrategyPerformance = async () => {
     try {
-      const params = {};
+      const params = { period };
       if (selectedAccount && selectedAccount !== 'all') {
         params.account_id = selectedAccount;
       }
@@ -178,7 +178,7 @@ function Dashboard() {
 
   const loadTickerPerformance = async () => {
     try {
-      const params = {};
+      const params = { period };
       if (selectedAccount && selectedAccount !== 'all') {
         params.account_id = selectedAccount;
       }
@@ -422,10 +422,11 @@ function Dashboard() {
             <div className="dashboard-filter-group">
               <label>Time Period</label>
               <select value={period} onChange={(e) => setPeriod(e.target.value)}>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
+                <option value="week">1 Week</option>
+                <option value="month">1 Month</option>
                 <option value="ytd">Year to Date</option>
-                <option value="year">This Year</option>
+                <option value="year">1 Year</option>
+                <option value="last_year">Last Year</option>
                 <option value="all">All Time</option>
               </select>
             </div>
