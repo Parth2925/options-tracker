@@ -463,7 +463,13 @@ class Trade(db.Model):
             close_dt = date.today()
         
         if open_dt and close_dt:
-            return (close_dt - open_dt).days
+            days = (close_dt - open_dt).days
+            # If trade was opened and closed on the same day, treat as 1 day minimum
+            # This allows return % calculation for same-day trades
+            # Only apply minimum for closed trades (not open positions)
+            if not is_open and days == 0:
+                return 1
+            return days if days >= 0 else None
         return None
     
     def calculate_time_based_return(self):
